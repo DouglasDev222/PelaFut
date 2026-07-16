@@ -1,4 +1,4 @@
-import { BrowserRouter, Routes, Route } from "react-router-dom"
+import { BrowserRouter, Routes, Route, Link } from "react-router-dom"
 import { AuthProvider } from "@/features/auth/AuthProvider"
 import { ProtectedRoute } from "@/features/auth/ProtectedRoute"
 import { LoginForm } from "@/features/auth/LoginForm"
@@ -6,6 +6,8 @@ import { SignupForm } from "@/features/auth/SignupForm"
 import { ForgotPasswordForm } from "@/features/auth/ForgotPasswordForm"
 import { ResetPasswordForm } from "@/features/auth/ResetPasswordForm"
 import { ProfilePage } from "@/features/auth/ProfilePage"
+import { PlayerListPage } from "@/features/players/PlayerListPage"
+import { PlayerFormPage } from "@/features/players/PlayerFormPage"
 
 function CenteredPage({ children }: { children: React.ReactNode }) {
   return <div className="flex min-h-svh items-center justify-center p-4">{children}</div>
@@ -17,9 +19,10 @@ function HomePage() {
       <div className="flex flex-col items-center gap-4">
         <h1 className="text-2xl font-semibold">PelaFut</h1>
         <p className="text-muted-foreground">Você está logado.</p>
-        <a className="text-sm underline" href="/profile">
-          Ir para o perfil
-        </a>
+        <div className="flex gap-4 text-sm underline">
+          <Link to="/players">Peladeiros</Link>
+          <Link to="/profile">Meu perfil</Link>
+        </div>
       </div>
     </CenteredPage>
   )
@@ -44,6 +47,36 @@ function App() {
               <ProtectedRoute>
                 <CenteredPage>
                   <ProfilePage />
+                </CenteredPage>
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/players"
+            element={
+              <ProtectedRoute>
+                <CenteredPage>
+                  <PlayerListPage />
+                </CenteredPage>
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/players/new"
+            element={
+              <ProtectedRoute>
+                <CenteredPage>
+                  <PlayerFormPage />
+                </CenteredPage>
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/players/:id/edit"
+            element={
+              <ProtectedRoute>
+                <CenteredPage>
+                  <PlayerFormPage />
                 </CenteredPage>
               </ProtectedRoute>
             }
