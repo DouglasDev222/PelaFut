@@ -1,0 +1,14 @@
+node_modules/
+dist/
+build/
+.env
+.env.local
+*.local
+.DS_Store
+Thumbs.db
+supabase/.branches
+supabase/.temp
+.vscode/*
+!.vscode/extensions.json
+*.tsbuildinfo
+coverage/
