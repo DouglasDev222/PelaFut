@@ -1,4 +1,5 @@
 import { Link } from "react-router-dom"
+import type { MatchStatus } from "@pelafut/shared"
 import { useMatches } from "@/features/matches/useMatches"
 import { Button, buttonVariants } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
@@ -6,6 +7,13 @@ import { cn } from "@/lib/utils"
 
 function todayIso() {
   return new Date().toISOString().slice(0, 10)
+}
+
+const STATUS_LABELS: Record<MatchStatus, string> = {
+  draft: "Rascunho",
+  teams_formed: "Times formados",
+  in_progress: "Partida em andamento",
+  finished: "Encerrada",
 }
 
 export function MatchListPage() {
@@ -53,7 +61,12 @@ function MatchSection({
         <Card key={match.id}>
           <CardContent className="flex items-center justify-between gap-4 py-4">
             <div>
-              <p className="font-medium">{match.name}</p>
+              <p className="flex items-center gap-2 font-medium">
+                {match.name}
+                <span className="rounded-full border px-2 py-0.5 text-xs font-normal text-muted-foreground">
+                  {STATUS_LABELS[match.status]}
+                </span>
+              </p>
               <p className="text-sm text-muted-foreground">
                 {match.match_date}
                 {match.start_time ? ` às ${match.start_time.slice(0, 5)}` : ""}
@@ -75,6 +88,14 @@ function MatchSection({
               >
                 Times
               </Link>
+              {match.status !== "draft" && (
+                <Link
+                  to={`/matches/${match.id}/live`}
+                  className={cn(buttonVariants({ variant: "outline", size: "sm" }))}
+                >
+                  {match.status === "finished" ? "Ver partida" : "Partida ao vivo"}
+                </Link>
+              )}
               <Link
                 to={`/matches/${match.id}/edit`}
                 className={cn(buttonVariants({ variant: "outline", size: "sm" }))}
