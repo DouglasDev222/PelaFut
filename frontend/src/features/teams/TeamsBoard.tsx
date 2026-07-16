@@ -1,7 +1,7 @@
 import { DndContext, useDraggable, useDroppable, type DragEndEvent } from "@dnd-kit/core"
 import { Star } from "lucide-react"
 import type { Player } from "@pelafut/shared"
-import type { FormationTeam } from "@/features/teams/useTeamFormation"
+import { captainFirst, type FormationTeam } from "@/features/teams/useTeamFormation"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { cn } from "@/lib/utils"
 
@@ -53,13 +53,16 @@ function PlayerChip({
 function TeamColumn({
   team,
   teamIndex,
+  playersPerTeam,
   onSetCaptain,
 }: {
   team: FormationTeam
   teamIndex: number
+  playersPerTeam: number
   onSetCaptain: (teamIndex: number, playerId: string) => void
 }) {
   const { setNodeRef, isOver } = useDroppable({ id: `team-${teamIndex}` })
+  const shortfall = playersPerTeam - team.players.length
 
   return (
     <Card ref={setNodeRef} className={cn(isOver && "ring-2 ring-primary")}>
@@ -74,9 +77,15 @@ function TeamColumn({
             ({team.players.length})
           </span>
         </CardTitle>
+        {shortfall > 0 && (
+          <p className="text-xs text-amber-600 dark:text-amber-500">
+            Reserva: precisa pegar {shortfall} jogador{shortfall === 1 ? "" : "es"} emprestado
+            {shortfall === 1 ? "" : "s"} do time que perder para jogar.
+          </p>
+        )}
       </CardHeader>
       <CardContent className="flex min-h-24 flex-col gap-2">
-        {team.players.map((player) => (
+        {captainFirst(team).map((player) => (
           <PlayerChip
             key={player.id}
             player={player}
@@ -92,10 +101,12 @@ function TeamColumn({
 
 export function TeamsBoard({
   teams,
+  playersPerTeam,
   onMovePlayer,
   onSetCaptain,
 }: {
   teams: FormationTeam[]
+  playersPerTeam: number
   onMovePlayer: (playerId: string, fromTeamIndex: number, toTeamIndex: number) => void
   onSetCaptain: (teamIndex: number, playerId: string) => void
 }) {
@@ -113,7 +124,13 @@ export function TeamsBoard({
     <DndContext onDragEnd={handleDragEnd}>
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
         {teams.map((team, i) => (
-          <TeamColumn key={i} team={team} teamIndex={i} onSetCaptain={onSetCaptain} />
+          <TeamColumn
+            key={i}
+            team={team}
+            teamIndex={i}
+            playersPerTeam={playersPerTeam}
+            onSetCaptain={onSetCaptain}
+          />
         ))}
       </div>
     </DndContext>

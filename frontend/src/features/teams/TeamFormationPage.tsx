@@ -1,5 +1,5 @@
 import { useParams } from "react-router-dom"
-import { useTeamFormation } from "@/features/teams/useTeamFormation"
+import { captainFirst, teamCapacity, useTeamFormation } from "@/features/teams/useTeamFormation"
 import { TeamsBoard } from "@/features/teams/TeamsBoard"
 import { TEAM_COLORS } from "@/features/teams/teamColors"
 import { Button } from "@/components/ui/button"
@@ -11,6 +11,7 @@ export function TeamFormationPage() {
   const {
     teams,
     availablePlayers,
+    playersPerTeam,
     phase,
     currentTeamIndex,
     loading,
@@ -36,6 +37,13 @@ export function TeamFormationPage() {
     )
   }
 
+  const totalParticipants =
+    availablePlayers.length + teams.reduce((sum, t) => sum + t.players.length, 0)
+  const capacities = teams.map((_, i) =>
+    teamCapacity(i, teams.length, playersPerTeam, totalParticipants)
+  )
+  const reserveTeamIndex = capacities.findIndex((c) => c < playersPerTeam)
+
   return (
     <div className="flex w-full max-w-3xl flex-col gap-4">
       <h1 className="text-xl font-semibold">Formação dos times</h1>
@@ -47,11 +55,27 @@ export function TeamFormationPage() {
             Escolha a cor de cada time. Depois o Time 1 escolhe primeiro (o primeiro jogador
             escolhido vira o capitão), seguido pelo Time 2, e assim por diante até completar.
           </p>
+          {reserveTeamIndex !== -1 && (
+            <p className="text-sm text-amber-600 dark:text-amber-500">
+              Time {teams[reserveTeamIndex]!.number} vai ficar como reserva, com só{" "}
+              {capacities[reserveTeamIndex]} jogador
+              {capacities[reserveTeamIndex] === 1 ? "" : "es"}. Na hora de jogar, ele vai precisar
+              pegar {playersPerTeam - capacities[reserveTeamIndex]!} jogador
+              {playersPerTeam - capacities[reserveTeamIndex]! === 1 ? "" : "es"} emprestado
+              {playersPerTeam - capacities[reserveTeamIndex]! === 1 ? "" : "s"} do time que perder.
+            </p>
+          )}
           <div className="flex flex-col gap-2">
             {teams.map((team, i) => (
               <Card key={i}>
                 <CardContent className="flex items-center justify-between gap-4 py-3">
-                  <span className="font-medium">Time {team.number}</span>
+                  <span className="font-medium">
+                    Time {team.number}
+                    <span className="ml-2 text-sm font-normal text-muted-foreground">
+                      ({capacities[i]} jogador{capacities[i] === 1 ? "" : "es"}
+                      {i === reserveTeamIndex ? " · reserva" : ""})
+                    </span>
+                  </span>
                   <div className="flex gap-1.5">
                     {TEAM_COLORS.map((c) => (
                       <button
@@ -114,13 +138,17 @@ export function TeamFormationPage() {
                       style={{ backgroundColor: team.color }}
                     />
                     Time {team.number}
+                    <span className="text-sm font-normal text-muted-foreground">
+                      ({team.players.length}/{capacities[i]})
+                      {i === reserveTeamIndex ? " · reserva" : ""}
+                    </span>
                   </CardTitle>
                 </CardHeader>
                 <CardContent className="flex flex-col gap-1 text-sm">
                   {team.players.length === 0 && (
                     <p className="text-muted-foreground">Aguardando capitão...</p>
                   )}
-                  {team.players.map((p) => (
+                  {captainFirst(team).map((p) => (
                     <p key={p.id}>
                       {p.id === team.captainId ? "⭐ " : ""}
                       {p.name}
@@ -148,7 +176,12 @@ export function TeamFormationPage() {
               </Button>
             </div>
           </div>
-          <TeamsBoard teams={teams} onMovePlayer={movePlayer} onSetCaptain={setCaptain} />
+          <TeamsBoard
+            teams={teams}
+            playersPerTeam={playersPerTeam}
+            onMovePlayer={movePlayer}
+            onSetCaptain={setCaptain}
+          />
         </div>
       )}
     </div>
