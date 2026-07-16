@@ -4,29 +4,29 @@ import { supabase } from "@/lib/supabaseClient"
 import { colorForIndex } from "@/features/teams/teamColors"
 
 export interface FormationTeam {
-  name: string
+  number: number
   color: string
+  captainId: string | null
   players: Player[]
 }
 
-function buildInitialFormation(participants: Player[], playersPerTeam: number): FormationTeam[] {
-  if (participants.length === 0 || playersPerTeam <= 0) return []
-  const numTeams = Math.ceil(participants.length / playersPerTeam)
-  const teams: FormationTeam[] = Array.from({ length: numTeams }, (_, i) => ({
-    name: `Time ${colorForIndex(i).name}`,
+export type FormationPhase = "setup" | "draft" | "done"
+
+function emptyTeams(numTeams: number): FormationTeam[] {
+  return Array.from({ length: numTeams }, (_, i) => ({
+    number: i + 1,
     color: colorForIndex(i).hex,
+    captainId: null,
     players: [],
   }))
-  participants.forEach((player, idx) => {
-    teams[idx % numTeams]!.players.push(player)
-  })
-  return teams
 }
 
 export function useTeamFormation(matchId: string) {
   const [teams, setTeams] = useState<FormationTeam[]>([])
-  const [playersPerTeam, setPlayersPerTeam] = useState(0)
-  const [alreadyFormed, setAlreadyFormed] = useState(false)
+  const [availablePlayers, setAvailablePlayers] = useState<Player[]>([])
+  const [participants, setParticipants] = useState<Player[]>([])
+  const [phase, setPhase] = useState<FormationPhase>("setup")
+  const [currentTeamIndex, setCurrentTeamIndex] = useState(0)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
@@ -45,34 +45,7 @@ export function useTeamFormation(matchId: string) {
       setLoading(false)
       return
     }
-    setPlayersPerTeam(match.players_per_team)
 
-    const { data: existingTeams, error: teamsError } = await supabase
-      .from("teams")
-      .select("id, name, color, position, team_players(player_id, players(*))")
-      .eq("match_id", matchId)
-      .order("position")
-
-    if (teamsError) {
-      setError(teamsError.message)
-      setLoading(false)
-      return
-    }
-
-    if (existingTeams && existingTeams.length > 0) {
-      setAlreadyFormed(true)
-      setTeams(
-        existingTeams.map((t) => ({
-          name: t.name,
-          color: t.color,
-          players: (t.team_players as unknown as { players: Player }[]).map((tp) => tp.players),
-        }))
-      )
-      setLoading(false)
-      return
-    }
-
-    setAlreadyFormed(false)
     const { data: matchPlayers, error: mpError } = await supabase
       .from("match_players")
       .select("players(*)")
@@ -82,16 +55,87 @@ export function useTeamFormation(matchId: string) {
       setLoading(false)
       return
     }
-    const participants = ((matchPlayers ?? []) as unknown as { players: Player }[]).map(
+    const loadedParticipants = ((matchPlayers ?? []) as unknown as { players: Player }[]).map(
       (r) => r.players
     )
-    setTeams(buildInitialFormation(participants, match.players_per_team))
+    setParticipants(loadedParticipants)
+
+    const { data: existingTeams, error: teamsError } = await supabase
+      .from("teams")
+      .select("id, color, position, captain_player_id, team_players(player_id, players(*))")
+      .eq("match_id", matchId)
+      .order("position")
+    if (teamsError) {
+      setError(teamsError.message)
+      setLoading(false)
+      return
+    }
+
+    if (existingTeams && existingTeams.length > 0) {
+      setTeams(
+        existingTeams.map((t, i) => ({
+          number: i + 1,
+          color: t.color,
+          captainId: t.captain_player_id,
+          players: (t.team_players as unknown as { players: Player }[]).map((tp) => tp.players),
+        }))
+      )
+      setAvailablePlayers([])
+      setPhase("done")
+      setLoading(false)
+      return
+    }
+
+    const numTeams =
+      loadedParticipants.length > 0 && match.players_per_team > 0
+        ? Math.ceil(loadedParticipants.length / match.players_per_team)
+        : 0
+    setTeams(emptyTeams(numTeams))
+    setAvailablePlayers(loadedParticipants)
+    setCurrentTeamIndex(0)
+    setPhase("setup")
     setLoading(false)
   }, [matchId])
 
   useEffect(() => {
     load()
   }, [load])
+
+  function setTeamColor(teamIndex: number, color: string) {
+    setTeams((prev) => prev.map((t, i) => (i === teamIndex ? { ...t, color } : t)))
+  }
+
+  function startDraft() {
+    setCurrentTeamIndex(0)
+    setPhase("draft")
+  }
+
+  function pickPlayer(playerId: string) {
+    setTeams((prev) => {
+      const team = prev[currentTeamIndex]
+      const player = availablePlayers.find((p) => p.id === playerId)
+      if (!team || !player) return prev
+      const next = prev.map((t, i) =>
+        i === currentTeamIndex
+          ? {
+              ...t,
+              captainId: t.captainId ?? player.id,
+              players: [...t.players, player],
+            }
+          : t
+      )
+      return next
+    })
+    setAvailablePlayers((prev) => {
+      const next = prev.filter((p) => p.id !== playerId)
+      if (next.length === 0) {
+        setPhase("done")
+      } else {
+        setCurrentTeamIndex((idx) => (idx + 1) % teams.length)
+      }
+      return next
+    })
+  }
 
   function movePlayer(playerId: string, fromTeamIndex: number, toTeamIndex: number) {
     if (fromTeamIndex === toTeamIndex) return
@@ -104,12 +148,23 @@ export function useTeamFormation(matchId: string) {
       if (playerIdx === -1) return prev
       const [player] = fromTeam.players.splice(playerIdx, 1)
       if (player) toTeam.players.push(player)
+      if (fromTeam.captainId === playerId) fromTeam.captainId = null
       return next
     })
   }
 
-  function regenerate(participants: Player[]) {
-    setTeams(buildInitialFormation(participants, playersPerTeam))
+  function setCaptain(teamIndex: number, playerId: string) {
+    setTeams((prev) =>
+      prev.map((t, i) => (i === teamIndex ? { ...t, captainId: playerId } : t))
+    )
+  }
+
+  function resetDraft() {
+    const numTeams = teams.length
+    setTeams((prev) => emptyTeams(prev.length || numTeams))
+    setAvailablePlayers(participants)
+    setCurrentTeamIndex(0)
+    setPhase("setup")
   }
 
   async function save() {
@@ -121,7 +176,13 @@ export function useTeamFormation(matchId: string) {
     const { data: insertedTeams, error: insertTeamsError } = await supabase
       .from("teams")
       .insert(
-        teams.map((t, i) => ({ match_id: matchId, name: t.name, color: t.color, position: i }))
+        teams.map((t, i) => ({
+          match_id: matchId,
+          name: `Time ${t.number}`,
+          color: t.color,
+          position: i,
+          captain_player_id: t.players.some((p) => p.id === t.captainId) ? t.captainId : null,
+        }))
       )
       .select("id")
 
@@ -162,5 +223,21 @@ export function useTeamFormation(matchId: string) {
     return { error: null }
   }
 
-  return { teams, loading, saving, error, alreadyFormed, movePlayer, regenerate, save, reload: load }
+  return {
+    teams,
+    availablePlayers,
+    phase,
+    currentTeamIndex,
+    loading,
+    saving,
+    error,
+    setTeamColor,
+    startDraft,
+    pickPlayer,
+    movePlayer,
+    setCaptain,
+    resetDraft,
+    save,
+    reload: load,
+  }
 }

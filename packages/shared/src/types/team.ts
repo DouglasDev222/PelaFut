@@ -6,6 +6,7 @@ export interface Team {
   name: string
   color: string
   position: number
+  captain_player_id: Uuid | null
   created_at: string
 }
 
