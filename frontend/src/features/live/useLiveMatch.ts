@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react"
-import type { Match, Player, RoundResult } from "@pelafut/shared"
+import type { Match, Player, RoundDecidedBy, RoundResult } from "@pelafut/shared"
 import { supabase } from "@/lib/supabaseClient"
 import {
   borrowShortfall,
@@ -7,6 +7,7 @@ import {
   suggestBorrowedPlayers,
   type RotationTeam,
 } from "@/features/live/rotation"
+import { resolvePenaltyShootout, type PenaltyKick, type PenaltyState } from "@/features/live/penalties"
 
 export interface LiveTeam {
   id: string
@@ -22,7 +23,9 @@ export interface LiveTeam {
 interface RoundGoal {
   id: string
   teamId: string
-  playerId: string
+  /** Null for a goal counted with no specific scorer ("gol sem autor"). */
+  playerId: string | null
+  assistPlayerId: string | null
 }
 
 interface CurrentRound {
@@ -70,6 +73,16 @@ export interface PendingTieOrder {
   awayTeamId: string
 }
 
+export type TieResolutionMode = "both_leave" | "penalties" | "direct"
+
+export interface PenaltyShootoutState {
+  roundId: string
+  homeTeamId: string
+  awayTeamId: string
+  firstKickerTeamId: string
+  kicks: (PenaltyKick & { id: string })[]
+}
+
 export function useLiveMatch(matchId: string) {
   const [match, setMatch] = useState<Match | null>(null)
   const [teams, setTeams] = useState<LiveTeam[]>([])
@@ -77,6 +90,10 @@ export function useLiveMatch(matchId: string) {
   const [pendingBorrows, setPendingBorrows] = useState<PendingBorrowNeed[]>([])
   const [conflictWarnings, setConflictWarnings] = useState<BorrowConflictWarning[]>([])
   const [pendingTieOrder, setPendingTieOrder] = useState<PendingTieOrder | null>(null)
+  const [pendingTieDecision, setPendingTieDecision] = useState<PendingTieOrder | null>(null)
+  const [pendingDirectWinner, setPendingDirectWinner] = useState<PendingTieOrder | null>(null)
+  const [pendingPenaltyFirstKicker, setPendingPenaltyFirstKicker] = useState<PendingTieOrder | null>(null)
+  const [penaltyShootout, setPenaltyShootout] = useState<PenaltyShootoutState | null>(null)
   const [phase, setPhase] = useState<LivePhase>("not_started")
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -85,6 +102,9 @@ export function useLiveMatch(matchId: string) {
     setLoading(true)
     setError(null)
     setPendingTieOrder(null)
+    setPendingTieDecision(null)
+    setPendingDirectWinner(null)
+    setPendingPenaltyFirstKicker(null)
 
     const { data: matchData, error: matchError } = await supabase
       .from("matches")
@@ -157,18 +177,45 @@ export function useLiveMatch(matchId: string) {
       return
     }
 
-    const [{ data: goalRows, error: goalsError }, { data: borrowedRows, error: borrowedError }] =
-      await Promise.all([
-        supabase.from("match_round_goals").select("*").eq("round_id", latestRound.id),
-        supabase
-          .from("match_round_borrowed_players")
-          .select("team_id, player_id, borrowed_from_team_id")
-          .eq("round_id", latestRound.id),
-      ])
-    if (goalsError || borrowedError) {
-      setError(goalsError?.message ?? borrowedError?.message ?? "Erro ao carregar a rodada")
+    const [
+      { data: goalRows, error: goalsError },
+      { data: borrowedRows, error: borrowedError },
+      { data: penaltyKickRows, error: penaltyError },
+    ] = await Promise.all([
+      supabase.from("match_round_goals").select("*").eq("round_id", latestRound.id),
+      supabase
+        .from("match_round_borrowed_players")
+        .select("team_id, player_id, borrowed_from_team_id")
+        .eq("round_id", latestRound.id),
+      supabase
+        .from("match_round_penalty_kicks")
+        .select("id, team_id, scored")
+        .eq("round_id", latestRound.id)
+        .order("sequence"),
+    ])
+    if (goalsError || borrowedError || penaltyError) {
+      setError(goalsError?.message ?? borrowedError?.message ?? penaltyError?.message ?? "Erro ao carregar a rodada")
       setLoading(false)
       return
+    }
+
+    // A shootout in progress leaves kicks recorded but the round still
+    // in_progress — reconstruct it so a refresh mid-shootout doesn't lose it.
+    if (penaltyKickRows && penaltyKickRows.length > 0) {
+      setPenaltyShootout({
+        roundId: latestRound.id as string,
+        homeTeamId: latestRound.home_team_id as string,
+        awayTeamId: latestRound.away_team_id as string,
+        // The first kick recorded reveals who was chosen to go first.
+        firstKickerTeamId: penaltyKickRows[0]!.team_id as string,
+        kicks: penaltyKickRows.map((k) => ({
+          id: k.id as string,
+          teamId: k.team_id as string,
+          scored: k.scored as boolean,
+        })),
+      })
+    } else {
+      setPenaltyShootout(null)
     }
 
     const allPlayersById = new Map(
@@ -182,7 +229,8 @@ export function useLiveMatch(matchId: string) {
       goals: (goalRows ?? []).map((g) => ({
         id: g.id as string,
         teamId: g.team_id as string,
-        playerId: g.player_id as string,
+        playerId: g.player_id as string | null,
+        assistPlayerId: g.assist_player_id as string | null,
       })),
       startedAt: latestRound.started_at as string,
       pausedAt: (latestRound.paused_at as string | null) ?? null,
@@ -297,11 +345,21 @@ export function useLiveMatch(matchId: string) {
     return { error: null }
   }
 
-  async function recordGoal(teamId: string, playerId: string) {
+  async function recordGoal(
+    teamId: string,
+    playerId: string | null,
+    assistPlayerId: string | null = null
+  ) {
     if (!currentRound) return
+    const effectiveAssist = playerId ? assistPlayerId : null
     const { data, error: insertError } = await supabase
       .from("match_round_goals")
-      .insert({ round_id: currentRound.id, team_id: teamId, player_id: playerId })
+      .insert({
+        round_id: currentRound.id,
+        team_id: teamId,
+        player_id: playerId,
+        assist_player_id: effectiveAssist,
+      })
       .select("id")
       .single()
     if (insertError || !data) {
@@ -310,7 +368,13 @@ export function useLiveMatch(matchId: string) {
     }
     setCurrentRound((prev) =>
       prev
-        ? { ...prev, goals: [...prev.goals, { id: data.id as string, teamId, playerId }] }
+        ? {
+            ...prev,
+            goals: [
+              ...prev.goals,
+              { id: data.id as string, teamId, playerId, assistPlayerId: effectiveAssist },
+            ],
+          }
         : prev
     )
   }
@@ -358,14 +422,35 @@ export function useLiveMatch(matchId: string) {
     const awayScore = currentRound.goals.filter((g) => g.teamId === currentRound.awayTeamId).length
     const result: RoundResult = homeScore === awayScore ? "tie" : homeScore > awayScore ? "home_win" : "away_win"
 
-    if (result === "tie" && match.tie_both_leave_allowed) {
-      // There's no winner to decide the order automatically — ask the organizer
-      // which of the two goes furthest to the back before finalizing anything.
-      setPendingTieOrder({ homeTeamId: currentRound.homeTeamId, awayTeamId: currentRound.awayTeamId })
-      return { error: null, needsTieOrder: true }
+    if (result === "tie") {
+      // There's no winner to decide anything automatically — always ask the
+      // organizer how to resolve it, instead of silently picking a behavior.
+      setPendingTieDecision({ homeTeamId: currentRound.homeTeamId, awayTeamId: currentRound.awayTeamId })
+      return { error: null, needsTieDecision: true }
     }
 
     return finalizeRound(result)
+  }
+
+  function chooseTieResolution(mode: TieResolutionMode) {
+    if (!pendingTieDecision) return
+    const { homeTeamId, awayTeamId } = pendingTieDecision
+    if (mode === "both_leave") {
+      setPendingTieOrder({ homeTeamId, awayTeamId })
+    } else if (mode === "direct") {
+      setPendingDirectWinner({ homeTeamId, awayTeamId })
+    } else {
+      // Ask who kicks first before starting the shootout — no rule says home goes first.
+      setPendingPenaltyFirstKicker({ homeTeamId, awayTeamId })
+    }
+    setPendingTieDecision(null)
+  }
+
+  function startPenaltyShootout(firstKickerTeamId: string) {
+    if (!pendingPenaltyFirstKicker || !currentRound) return
+    const { homeTeamId, awayTeamId } = pendingPenaltyFirstKicker
+    setPenaltyShootout({ roundId: currentRound.id, homeTeamId, awayTeamId, firstKickerTeamId, kicks: [] })
+    setPendingPenaltyFirstKicker(null)
   }
 
   async function confirmTieOrder(lastTeamId: string) {
@@ -374,12 +459,75 @@ export function useLiveMatch(matchId: string) {
     return result
   }
 
-  async function finalizeRound(result: RoundResult, tieLastTeamId?: string) {
+  async function declareDirectWinner(winnerTeamId: string) {
+    if (!pendingDirectWinner) return { error: "Nenhuma decisão pendente" }
+    const result: RoundResult = winnerTeamId === pendingDirectWinner.homeTeamId ? "home_win" : "away_win"
+    const outcome = await finalizeRound(result, undefined, "direct")
+    setPendingDirectWinner(null)
+    return outcome
+  }
+
+  function penaltyState(): PenaltyState | null {
+    if (!penaltyShootout) return null
+    return resolvePenaltyShootout(
+      penaltyShootout.kicks,
+      penaltyShootout.homeTeamId,
+      penaltyShootout.awayTeamId,
+      penaltyShootout.firstKickerTeamId
+    )
+  }
+
+  async function recordPenaltyKick(teamId: string, scored: boolean) {
+    if (!penaltyShootout) return
+    const sequence = penaltyShootout.kicks.length
+    const { data, error: insertError } = await supabase
+      .from("match_round_penalty_kicks")
+      .insert({ round_id: penaltyShootout.roundId, team_id: teamId, sequence, scored })
+      .select("id")
+      .single()
+    if (insertError || !data) {
+      setError(insertError?.message ?? "Erro ao registrar cobrança")
+      return
+    }
+    setPenaltyShootout((prev) =>
+      prev ? { ...prev, kicks: [...prev.kicks, { id: data.id as string, teamId, scored }] } : prev
+    )
+  }
+
+  async function undoLastPenaltyKick() {
+    if (!penaltyShootout || penaltyShootout.kicks.length === 0) return
+    const last = penaltyShootout.kicks[penaltyShootout.kicks.length - 1]!
+    const { error: deleteError } = await supabase
+      .from("match_round_penalty_kicks")
+      .delete()
+      .eq("id", last.id)
+    if (deleteError) {
+      setError(deleteError.message)
+      return
+    }
+    setPenaltyShootout((prev) => (prev ? { ...prev, kicks: prev.kicks.slice(0, -1) } : prev))
+  }
+
+  async function confirmPenaltyWinner() {
+    if (!penaltyShootout) return { error: "Nenhuma cobrança em andamento" }
+    const state = penaltyState()
+    if (!state?.decided || !state.winnerTeamId) return { error: "A cobrança ainda não foi decidida" }
+    const result: RoundResult = state.winnerTeamId === penaltyShootout.homeTeamId ? "home_win" : "away_win"
+    const outcome = await finalizeRound(result, undefined, "penalties")
+    setPenaltyShootout(null)
+    return outcome
+  }
+
+  async function finalizeRound(
+    result: RoundResult,
+    tieLastTeamId?: string,
+    decidedBy: RoundDecidedBy = "regulation"
+  ) {
     if (!currentRound || !match) return { error: "Nenhuma rodada ativa" }
 
     const { error: finishError } = await supabase
       .from("match_rounds")
-      .update({ status: "finished", result, finished_at: new Date().toISOString() })
+      .update({ status: "finished", result, decided_by: decidedBy, finished_at: new Date().toISOString() })
       .eq("id", currentRound.id)
     if (finishError) {
       setError(finishError.message)
@@ -571,6 +719,11 @@ export function useLiveMatch(matchId: string) {
     pendingBorrows,
     conflictWarnings,
     pendingTieOrder,
+    pendingTieDecision,
+    pendingDirectWinner,
+    pendingPenaltyFirstKicker,
+    penaltyShootout,
+    penaltyState: penaltyState(),
     phase,
     loading,
     error,
@@ -580,7 +733,13 @@ export function useLiveMatch(matchId: string) {
     suggestedBorrowFor,
     confirmBorrow,
     endRound,
+    chooseTieResolution,
     confirmTieOrder,
+    declareDirectWinner,
+    startPenaltyShootout,
+    recordPenaltyKick,
+    undoLastPenaltyKick,
+    confirmPenaltyWinner,
     finishMatch,
     reopenMatch,
     pauseTimer,

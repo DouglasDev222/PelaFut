@@ -1,8 +1,17 @@
 import { useEffect, useState } from "react"
 import { Link, useParams } from "react-router-dom"
 import type { Player } from "@pelafut/shared"
-import { useLiveMatch, type BorrowCandidate, type LiveTeam, type PendingBorrowNeed } from "@/features/live/useLiveMatch"
+import {
+  useLiveMatch,
+  type BorrowCandidate,
+  type LiveTeam,
+  type PendingBorrowNeed,
+  type PendingTieOrder,
+  type PenaltyShootoutState,
+  type TieResolutionMode,
+} from "@/features/live/useLiveMatch"
 import { elapsedSecondsFor } from "@/features/live/rotation"
+import type { PenaltyState } from "@/features/live/penalties"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { cn } from "@/lib/utils"
@@ -34,10 +43,12 @@ function TeamBadge({ team }: { team: LiveTeam }) {
 function GoalScorerPicker({
   players,
   onPick,
+  onNoScorer,
   onCancel,
 }: {
   players: Player[]
   onPick: (playerId: string) => void
+  onNoScorer: () => void
   onCancel: () => void
 }) {
   return (
@@ -54,8 +65,50 @@ function GoalScorerPicker({
             {p.name}
           </button>
         ))}
+        <button
+          type="button"
+          onClick={onNoScorer}
+          className="rounded-md border px-2 py-1 text-xs text-muted-foreground hover:bg-muted"
+        >
+          Gol sem autor
+        </button>
         <button type="button" onClick={onCancel} className="rounded-md border px-2 py-1 text-xs text-muted-foreground">
           Cancelar
+        </button>
+      </div>
+    </div>
+  )
+}
+
+function AssistPicker({
+  players,
+  onPick,
+  onSkip,
+}: {
+  players: Player[]
+  onPick: (playerId: string) => void
+  onSkip: () => void
+}) {
+  return (
+    <div className="flex flex-col gap-1 rounded-md border p-2">
+      <p className="text-xs text-muted-foreground">Quem deu a assistência? (opcional)</p>
+      <div className="flex flex-wrap gap-1.5">
+        {players.map((p) => (
+          <button
+            key={p.id}
+            type="button"
+            onClick={() => onPick(p.id)}
+            className="rounded-md border px-2 py-1 text-xs hover:bg-muted"
+          >
+            {p.name}
+          </button>
+        ))}
+        <button
+          type="button"
+          onClick={onSkip}
+          className="rounded-md border px-2 py-1 text-xs text-muted-foreground hover:bg-muted"
+        >
+          Sem assistência
         </button>
       </div>
     </div>
@@ -122,6 +175,138 @@ function BorrowPrompt({
   )
 }
 
+function TieDecisionPrompt({
+  decision,
+  teams,
+  allowBothLeave,
+  onChoose,
+}: {
+  decision: PendingTieOrder
+  teams: LiveTeam[]
+  allowBothLeave: boolean
+  onChoose: (mode: TieResolutionMode) => void
+}) {
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="text-base">
+          Empate entre {teamLabel(teams, decision.homeTeamId)} e {teamLabel(teams, decision.awayTeamId)}! Como decidir?
+        </CardTitle>
+      </CardHeader>
+      <CardContent className="flex flex-wrap gap-2">
+        {allowBothLeave && (
+          <Button variant="outline" onClick={() => onChoose("both_leave")}>
+            Ambos saem
+          </Button>
+        )}
+        <Button variant="outline" onClick={() => onChoose("penalties")}>
+          Decidir nos pênaltis
+        </Button>
+        <Button variant="outline" onClick={() => onChoose("direct")}>
+          Marcar vencedor direto
+        </Button>
+      </CardContent>
+    </Card>
+  )
+}
+
+function TwoTeamChoicePrompt({
+  title,
+  buttonSuffix,
+  decision,
+  teams,
+  onChoose,
+}: {
+  title: string
+  buttonSuffix: string
+  decision: PendingTieOrder
+  teams: LiveTeam[]
+  onChoose: (teamId: string) => void
+}) {
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="text-base">{title}</CardTitle>
+      </CardHeader>
+      <CardContent className="flex gap-2">
+        {[decision.homeTeamId, decision.awayTeamId].map((teamId) => (
+          <Button key={teamId} variant="outline" onClick={() => onChoose(teamId)}>
+            {teamLabel(teams, teamId)} {buttonSuffix}
+          </Button>
+        ))}
+      </CardContent>
+    </Card>
+  )
+}
+
+function PenaltyShootoutPanel({
+  shootout,
+  state,
+  teams,
+  onKick,
+  onUndo,
+  onConfirmWinner,
+}: {
+  shootout: PenaltyShootoutState
+  state: PenaltyState
+  teams: LiveTeam[]
+  onKick: (teamId: string, scored: boolean) => void
+  onUndo: () => void
+  onConfirmWinner: () => void
+}) {
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="text-base">
+          Pênaltis: {teamLabel(teams, shootout.homeTeamId)} {state.homeScore} x {state.awayScore}{" "}
+          {teamLabel(teams, shootout.awayTeamId)}
+        </CardTitle>
+      </CardHeader>
+      <CardContent className="flex flex-col gap-3">
+        <div className="flex flex-wrap gap-1 text-sm">
+          {shootout.kicks.map((kick) => (
+            <span key={kick.id} title={teamLabel(teams, kick.teamId)}>
+              {kick.teamId === shootout.homeTeamId ? "🏠" : "🚩"}
+              {kick.scored ? "✅" : "❌"}
+            </span>
+          ))}
+        </div>
+
+        {!state.decided && (
+          <>
+            <p className="text-sm text-muted-foreground">
+              Cobrança de {teamLabel(teams, state.nextKickerTeamId)}
+            </p>
+            <div className="flex gap-2">
+              <Button onClick={() => onKick(state.nextKickerTeamId, true)}>Marcou</Button>
+              <Button variant="outline" onClick={() => onKick(state.nextKickerTeamId, false)}>
+                Perdeu
+              </Button>
+            </div>
+          </>
+        )}
+
+        {shootout.kicks.length > 0 && (
+          <Button variant="outline" size="sm" className="self-start" onClick={onUndo}>
+            Desfazer última cobrança
+          </Button>
+        )}
+
+        {state.decided && state.winnerTeamId && (
+          <Button onClick={onConfirmWinner}>
+            Confirmar {teamLabel(teams, state.winnerTeamId)} venceu nos pênaltis
+          </Button>
+        )}
+      </CardContent>
+    </Card>
+  )
+}
+
+function teamLabel(teams: LiveTeam[], teamId: string | undefined): string {
+  const team = teams.find((t) => t.id === teamId)
+  return team ? `Time ${team.number}` : "Time"
+}
+
 export function LiveMatchPage() {
   const { id } = useParams<{ id: string }>()
   const {
@@ -131,6 +316,11 @@ export function LiveMatchPage() {
     pendingBorrows,
     conflictWarnings,
     pendingTieOrder,
+    pendingTieDecision,
+    pendingDirectWinner,
+    pendingPenaltyFirstKicker,
+    penaltyShootout,
+    penaltyState,
     phase,
     loading,
     error,
@@ -140,7 +330,13 @@ export function LiveMatchPage() {
     suggestedBorrowFor,
     confirmBorrow,
     endRound,
+    chooseTieResolution,
     confirmTieOrder,
+    declareDirectWinner,
+    startPenaltyShootout,
+    recordPenaltyKick,
+    undoLastPenaltyKick,
+    confirmPenaltyWinner,
     finishMatch,
     reopenMatch,
     pauseTimer,
@@ -148,10 +344,12 @@ export function LiveMatchPage() {
   } = useLiveMatch(id!)
 
   const [scoringForTeam, setScoringForTeam] = useState<string | null>(null)
+  const [pendingAssistFor, setPendingAssistFor] = useState<{ teamId: string; scorerId: string } | null>(null)
   const [, forceTick] = useState(0)
 
   useEffect(() => {
     setScoringForTeam(null)
+    setPendingAssistFor(null)
   }, [currentRound?.id])
 
   const hasTimer =
@@ -251,6 +449,14 @@ export function LiveMatchPage() {
     goalsToWin != null &&
     (homeGoals.length >= goalsToWin || awayGoals.length >= goalsToWin)
 
+  const tieFlowActive = !!(
+    pendingTieDecision ||
+    pendingTieOrder ||
+    pendingDirectWinner ||
+    pendingPenaltyFirstKicker ||
+    penaltyShootout
+  )
+
   return (
     <div className="flex w-full max-w-2xl flex-col gap-4">
       <BackLink />
@@ -278,10 +484,19 @@ export function LiveMatchPage() {
         )
       })}
 
+      {pendingTieDecision && (
+        <TieDecisionPrompt
+          decision={pendingTieDecision}
+          teams={teams}
+          allowBothLeave={match.tie_both_leave_allowed}
+          onChoose={chooseTieResolution}
+        />
+      )}
+
       {pendingTieOrder && (
         <Card>
           <CardHeader>
-            <CardTitle className="text-base">Empate! Qual time vai para o fim da fila?</CardTitle>
+            <CardTitle className="text-base">Qual time vai para o fim da fila?</CardTitle>
           </CardHeader>
           <CardContent className="flex flex-col gap-2">
             <p className="text-sm text-muted-foreground">
@@ -289,20 +504,48 @@ export function LiveMatchPage() {
               volta um pouco mais cedo).
             </p>
             <div className="flex gap-2">
-              {[pendingTieOrder.homeTeamId, pendingTieOrder.awayTeamId].map((teamId) => {
-                const team = teams.find((t) => t.id === teamId)
-                return (
-                  <Button key={teamId} variant="outline" onClick={() => confirmTieOrder(teamId)}>
-                    {team ? `Time ${team.number}` : "Time"} fica por último
-                  </Button>
-                )
-              })}
+              {[pendingTieOrder.homeTeamId, pendingTieOrder.awayTeamId].map((teamId) => (
+                <Button key={teamId} variant="outline" onClick={() => confirmTieOrder(teamId)}>
+                  {teamLabel(teams, teamId)} fica por último
+                </Button>
+              ))}
             </div>
           </CardContent>
         </Card>
       )}
 
-      {!pendingTieOrder && phase === "pending_borrow" &&
+      {pendingDirectWinner && (
+        <TwoTeamChoicePrompt
+          title="Qual time venceu?"
+          buttonSuffix="venceu"
+          decision={pendingDirectWinner}
+          teams={teams}
+          onChoose={declareDirectWinner}
+        />
+      )}
+
+      {pendingPenaltyFirstKicker && (
+        <TwoTeamChoicePrompt
+          title="Qual time bate primeiro nos pênaltis?"
+          buttonSuffix="começa"
+          decision={pendingPenaltyFirstKicker}
+          teams={teams}
+          onChoose={startPenaltyShootout}
+        />
+      )}
+
+      {penaltyShootout && penaltyState && (
+        <PenaltyShootoutPanel
+          shootout={penaltyShootout}
+          state={penaltyState}
+          teams={teams}
+          onKick={recordPenaltyKick}
+          onUndo={undoLastPenaltyKick}
+          onConfirmWinner={confirmPenaltyWinner}
+        />
+      )}
+
+      {!tieFlowActive && phase === "pending_borrow" &&
         pendingBorrows.map((need) => (
           <BorrowPrompt
             key={need.teamId}
@@ -313,7 +556,7 @@ export function LiveMatchPage() {
           />
         ))}
 
-      {!pendingTieOrder && phase === "live" && currentRound && (
+      {!tieFlowActive && phase === "live" && currentRound && (
         <>
           <Card>
             <CardHeader>
@@ -352,11 +595,29 @@ export function LiveMatchPage() {
 
               <div className="grid grid-cols-2 gap-4">
                 <div className="flex flex-col gap-2">
-                  {scoringForTeam === currentRound.homeTeamId ? (
+                  {pendingAssistFor?.teamId === currentRound.homeTeamId ? (
+                    <AssistPicker
+                      players={onCourtPlayers(currentRound.homeTeamId).filter(
+                        (p) => p.id !== pendingAssistFor.scorerId
+                      )}
+                      onPick={(assistId) => {
+                        recordGoal(currentRound.homeTeamId, pendingAssistFor.scorerId, assistId)
+                        setPendingAssistFor(null)
+                      }}
+                      onSkip={() => {
+                        recordGoal(currentRound.homeTeamId, pendingAssistFor.scorerId, null)
+                        setPendingAssistFor(null)
+                      }}
+                    />
+                  ) : scoringForTeam === currentRound.homeTeamId ? (
                     <GoalScorerPicker
                       players={onCourtPlayers(currentRound.homeTeamId)}
                       onPick={(playerId) => {
-                        recordGoal(currentRound.homeTeamId, playerId)
+                        setScoringForTeam(null)
+                        setPendingAssistFor({ teamId: currentRound.homeTeamId, scorerId: playerId })
+                      }}
+                      onNoScorer={() => {
+                        recordGoal(currentRound.homeTeamId, null)
                         setScoringForTeam(null)
                       }}
                       onCancel={() => setScoringForTeam(null)}
@@ -368,7 +629,12 @@ export function LiveMatchPage() {
                   )}
                   {homeGoals.map((g) => (
                     <p key={g.id} className="flex items-center justify-between text-xs text-muted-foreground">
-                      ⚽ {allPlayersById.get(g.playerId)?.name ?? "?"}
+                      <span>
+                        ⚽ {g.playerId ? allPlayersById.get(g.playerId)?.name ?? "?" : "Gol (sem autor)"}
+                        {g.assistPlayerId
+                          ? ` · assist. ${allPlayersById.get(g.assistPlayerId)?.name ?? "?"}`
+                          : ""}
+                      </span>
                       <button type="button" className="underline" onClick={() => removeGoal(g.id)}>
                         remover
                       </button>
@@ -376,11 +642,29 @@ export function LiveMatchPage() {
                   ))}
                 </div>
                 <div className="flex flex-col gap-2">
-                  {scoringForTeam === currentRound.awayTeamId ? (
+                  {pendingAssistFor?.teamId === currentRound.awayTeamId ? (
+                    <AssistPicker
+                      players={onCourtPlayers(currentRound.awayTeamId).filter(
+                        (p) => p.id !== pendingAssistFor.scorerId
+                      )}
+                      onPick={(assistId) => {
+                        recordGoal(currentRound.awayTeamId, pendingAssistFor.scorerId, assistId)
+                        setPendingAssistFor(null)
+                      }}
+                      onSkip={() => {
+                        recordGoal(currentRound.awayTeamId, pendingAssistFor.scorerId, null)
+                        setPendingAssistFor(null)
+                      }}
+                    />
+                  ) : scoringForTeam === currentRound.awayTeamId ? (
                     <GoalScorerPicker
                       players={onCourtPlayers(currentRound.awayTeamId)}
                       onPick={(playerId) => {
-                        recordGoal(currentRound.awayTeamId, playerId)
+                        setScoringForTeam(null)
+                        setPendingAssistFor({ teamId: currentRound.awayTeamId, scorerId: playerId })
+                      }}
+                      onNoScorer={() => {
+                        recordGoal(currentRound.awayTeamId, null)
                         setScoringForTeam(null)
                       }}
                       onCancel={() => setScoringForTeam(null)}
@@ -392,7 +676,12 @@ export function LiveMatchPage() {
                   )}
                   {awayGoals.map((g) => (
                     <p key={g.id} className="flex items-center justify-between text-xs text-muted-foreground">
-                      ⚽ {allPlayersById.get(g.playerId)?.name ?? "?"}
+                      <span>
+                        ⚽ {g.playerId ? allPlayersById.get(g.playerId)?.name ?? "?" : "Gol (sem autor)"}
+                        {g.assistPlayerId
+                          ? ` · assist. ${allPlayersById.get(g.assistPlayerId)?.name ?? "?"}`
+                          : ""}
+                      </span>
                       <button type="button" className="underline" onClick={() => removeGoal(g.id)}>
                         remover
                       </button>

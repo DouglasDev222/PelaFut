@@ -2,6 +2,7 @@ import type { Uuid } from "./common.js"
 
 export type RoundStatus = "in_progress" | "finished"
 export type RoundResult = "home_win" | "away_win" | "tie"
+export type RoundDecidedBy = "regulation" | "penalties" | "direct"
 
 export interface MatchRound {
   id: Uuid
@@ -11,6 +12,7 @@ export interface MatchRound {
   away_team_id: Uuid
   status: RoundStatus
   result: RoundResult | null
+  decided_by: RoundDecidedBy | null
   started_at: string
   finished_at: string | null
   paused_at: string | null
@@ -21,7 +23,17 @@ export interface MatchRoundGoal {
   id: Uuid
   round_id: Uuid
   team_id: Uuid
-  player_id: Uuid
+  player_id: Uuid | null
+  assist_player_id: Uuid | null
+  created_at: string
+}
+
+export interface MatchRoundPenaltyKick {
+  id: Uuid
+  round_id: Uuid
+  team_id: Uuid
+  sequence: number
+  scored: boolean
   created_at: string
 }
 
