@@ -1,0 +1,87 @@
+import { useEffect, useState, type FormEvent } from "react"
+import { useAuth } from "@/features/auth/AuthProvider"
+import { supabase } from "@/lib/supabaseClient"
+import { Button } from "@/components/ui/button"
+import { Input } from "@/components/ui/input"
+import { Label } from "@/components/ui/label"
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+
+export function ProfilePage() {
+  const { user, signOut } = useAuth()
+  const [fullName, setFullName] = useState("")
+  const [avatarUrl, setAvatarUrl] = useState("")
+  const [loading, setLoading] = useState(true)
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const [saved, setSaved] = useState(false)
+
+  useEffect(() => {
+    if (!user) return
+    supabase
+      .from("profiles")
+      .select("full_name, avatar_url")
+      .eq("id", user.id)
+      .single()
+      .then(({ data, error }) => {
+        if (error) {
+          setError(error.message)
+        } else if (data) {
+          setFullName(data.full_name ?? "")
+          setAvatarUrl(data.avatar_url ?? "")
+        }
+        setLoading(false)
+      })
+  }, [user])
+
+  async function handleSubmit(e: FormEvent) {
+    e.preventDefault()
+    if (!user) return
+    setSaving(true)
+    setError(null)
+    setSaved(false)
+    const { error } = await supabase
+      .from("profiles")
+      .update({ full_name: fullName, avatar_url: avatarUrl || null })
+      .eq("id", user.id)
+    setSaving(false)
+    if (error) {
+      setError(error.message)
+      return
+    }
+    setSaved(true)
+  }
+
+  if (loading) return null
+
+  return (
+    <Card className="w-full max-w-sm">
+      <CardHeader>
+        <CardTitle>Meu perfil</CardTitle>
+      </CardHeader>
+      <CardContent>
+        <form className="flex flex-col gap-4" onSubmit={handleSubmit}>
+          <div className="flex flex-col gap-2">
+            <Label>E-mail</Label>
+            <p className="text-sm text-muted-foreground">{user?.email}</p>
+          </div>
+          <div className="flex flex-col gap-2">
+            <Label htmlFor="fullName">Nome</Label>
+            <Input id="fullName" value={fullName} onChange={(e) => setFullName(e.target.value)} />
+          </div>
+          <div className="flex flex-col gap-2">
+            <Label htmlFor="avatarUrl">URL da foto</Label>
+            <Input id="avatarUrl" value={avatarUrl} onChange={(e) => setAvatarUrl(e.target.value)} />
+          </div>
+          {error && <p className="text-sm text-destructive">{error}</p>}
+          {saved && <p className="text-sm text-muted-foreground">Perfil atualizado.</p>}
+          <Button type="submit" disabled={saving}>
+            {saving ? "Salvando..." : "Salvar"}
+          </Button>
+          <Button type="button" variant="outline" onClick={() => signOut()}>
+            Sair
+          </Button>
+        </form>
+      </CardContent>
+    </Card>
+  )
+}
