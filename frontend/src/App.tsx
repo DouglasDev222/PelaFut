@@ -11,6 +11,7 @@ import { PlayerFormPage } from "@/features/players/PlayerFormPage"
 import { MatchListPage } from "@/features/matches/MatchListPage"
 import { MatchFormPage } from "@/features/matches/MatchFormPage"
 import { ParticipantSelectorPage } from "@/features/matches/ParticipantSelectorPage"
+import { TeamFormationPage } from "@/features/teams/TeamFormationPage"
 
 function CenteredPage({ children }: { children: React.ReactNode }) {
   return <div className="flex min-h-svh items-center justify-center p-4">{children}</div>
@@ -121,6 +122,16 @@ function App() {
               <ProtectedRoute>
                 <CenteredPage>
                   <ParticipantSelectorPage />
+                </CenteredPage>
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/matches/:id/teams"
+            element={
+              <ProtectedRoute>
+                <CenteredPage>
+                  <TeamFormationPage />
                 </CenteredPage>
               </ProtectedRoute>
             }

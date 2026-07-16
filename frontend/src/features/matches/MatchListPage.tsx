@@ -70,6 +70,12 @@ function MatchSection({
                 Participantes
               </Link>
               <Link
+                to={`/matches/${match.id}/teams`}
+                className={cn(buttonVariants({ variant: "outline", size: "sm" }))}
+              >
+                Times
+              </Link>
+              <Link
                 to={`/matches/${match.id}/edit`}
                 className={cn(buttonVariants({ variant: "outline", size: "sm" }))}
               >
