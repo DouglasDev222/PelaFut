@@ -375,35 +375,88 @@ export function useTeamFormation(matchId: string) {
     setSaving(true)
     setError(null)
 
-    await supabase.from("teams").delete().eq("match_id", matchId)
-
-    const { data: insertedTeams, error: insertTeamsError } = await supabase
+    // Update the existing teams in place instead of delete+recreate. Deleting
+    // teams would change their ids (and cascade-delete match_rounds/goals), wipe
+    // the queue (queue_position), and force the status back — which breaks a
+    // pelada that's already in progress when you just want to tweak the rosters.
+    const { data: existing, error: fetchError } = await supabase
       .from("teams")
-      .insert(
-        teams.map((t, i) => ({
-          match_id: matchId,
-          name: `Time ${t.number}`,
-          color: t.color,
-          position: i,
-          captain_player_id: t.players.some((p) => p.id === t.captainId) ? t.captainId : null,
-        }))
-      )
-      .select("id")
-
-    if (insertTeamsError || !insertedTeams) {
-      setError(insertTeamsError?.message ?? "Erro ao salvar times")
+      .select("id, position, queue_position")
+      .eq("match_id", matchId)
+      .order("position")
+    if (fetchError) {
+      setError(fetchError.message)
       setSaving(false)
-      return { error: insertTeamsError?.message ?? "Erro ao salvar times" }
+      return { error: fetchError.message }
+    }
+    const existingByPos = new Map<number, string>(
+      (existing ?? []).map((t) => [t.position as number, t.id as string])
+    )
+
+    const savedTeamIds: string[] = []
+    for (let i = 0; i < teams.length; i++) {
+      const t = teams[i]!
+      const captainId = t.players.some((p) => p.id === t.captainId) ? t.captainId : null
+      const prevId = existingByPos.get(i)
+      if (prevId) {
+        // Keeps the team's id and queue_position untouched.
+        const { error: updError } = await supabase
+          .from("teams")
+          .update({ name: `Time ${t.number}`, color: t.color, captain_player_id: captainId })
+          .eq("id", prevId)
+        if (updError) {
+          setError(updError.message)
+          setSaving(false)
+          return { error: updError.message }
+        }
+        // Replace the roster — team_players doesn't cascade to rounds/history.
+        const { error: delTpError } = await supabase.from("team_players").delete().eq("team_id", prevId)
+        if (delTpError) {
+          setError(delTpError.message)
+          setSaving(false)
+          return { error: delTpError.message }
+        }
+        savedTeamIds.push(prevId)
+      } else {
+        const { data: ins, error: insError } = await supabase
+          .from("teams")
+          .insert({
+            match_id: matchId,
+            name: `Time ${t.number}`,
+            color: t.color,
+            position: i,
+            captain_player_id: captainId,
+          })
+          .select("id")
+          .single()
+        if (insError || !ins) {
+          setError(insError?.message ?? "Erro ao salvar times")
+          setSaving(false)
+          return { error: insError?.message ?? "Erro ao salvar times" }
+        }
+        savedTeamIds.push(ins.id as string)
+      }
+    }
+
+    // Remove teams that no longer exist (fewer teams than before).
+    for (const [pos, id] of existingByPos) {
+      if (pos >= teams.length) {
+        const { error: delError } = await supabase.from("teams").delete().eq("id", id)
+        if (delError) {
+          setError(delError.message)
+          setSaving(false)
+          return { error: delError.message }
+        }
+      }
     }
 
     const teamPlayersRows = teams.flatMap((t, i) =>
       t.players.map((p) => ({
-        team_id: insertedTeams[i]!.id,
+        team_id: savedTeamIds[i]!,
         player_id: p.id,
         is_goalkeeper: p.position === "goleiro",
       }))
     )
-
     if (teamPlayersRows.length > 0) {
       const { error: insertTpError } = await supabase.from("team_players").insert(teamPlayersRows)
       if (insertTpError) {
@@ -413,16 +466,22 @@ export function useTeamFormation(matchId: string) {
       }
     }
 
-    const { error: statusError } = await supabase
-      .from("matches")
-      .update({ status: "teams_formed" })
-      .eq("id", matchId)
+    // Only move a draft forward to "teams_formed". Never downgrade a pelada
+    // that's already in progress or finished — editing rosters mid-match keeps
+    // it running, with the queue intact.
+    if (matchStatus !== "in_progress" && matchStatus !== "finished") {
+      const { error: statusError } = await supabase
+        .from("matches")
+        .update({ status: "teams_formed" })
+        .eq("id", matchId)
+      if (statusError) {
+        setError(statusError.message)
+        setSaving(false)
+        return { error: statusError.message }
+      }
+    }
 
     setSaving(false)
-    if (statusError) {
-      setError(statusError.message)
-      return { error: statusError.message }
-    }
     await load()
     return { error: null }
   }

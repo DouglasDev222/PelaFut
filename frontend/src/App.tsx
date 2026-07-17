@@ -111,13 +111,22 @@ function LiveMatchRoute() {
     <AppShell
       title="Partida ao vivo"
       headerActions={
-        <Link
-          to={`/matches/${id}/stats`}
-          aria-label="Ver histórico de jogos dessa pelada"
-          className="flex size-11 shrink-0 items-center justify-center rounded-full text-foreground hover:bg-muted"
-        >
-          <History className="size-5" />
-        </Link>
+        <div className="flex shrink-0 items-center">
+          <Link
+            to={`/matches/${id}/teams`}
+            aria-label="Editar times"
+            className="flex size-11 shrink-0 items-center justify-center rounded-full text-foreground hover:bg-muted"
+          >
+            <Users className="size-5" />
+          </Link>
+          <Link
+            to={`/matches/${id}/stats`}
+            aria-label="Ver histórico de jogos dessa pelada"
+            className="flex size-11 shrink-0 items-center justify-center rounded-full text-foreground hover:bg-muted"
+          >
+            <History className="size-5" />
+          </Link>
+        </div>
       }
     >
       <LiveMatchPage />
