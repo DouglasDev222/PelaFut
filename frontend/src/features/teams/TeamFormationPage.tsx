@@ -104,9 +104,14 @@ export function TeamFormationPage({
             escolhido vira o capitão), seguido pelo Time 2, e assim por diante até completar.
           </p>
           <div className="flex items-center justify-between gap-2 rounded-lg border p-3">
-            <span className="text-sm">
-              Jogadores por time: <strong>{playersPerTeam}</strong>
-            </span>
+            <div className="flex flex-col">
+              <span className="text-sm">
+                Jogadores na pelada: <strong>{totalParticipants}</strong>
+              </span>
+              <span className="text-sm">
+                Jogadores por time: <strong>{playersPerTeam}</strong>
+              </span>
+            </div>
             <Button variant="outline" size="sm" className="shrink-0" onClick={() => setSettingsOpen(true)}>
               <Settings2 className="size-4" /> Ajustar
             </Button>
