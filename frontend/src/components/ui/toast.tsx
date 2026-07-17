@@ -19,7 +19,7 @@ function Toaster() {
   const { toasts } = ToastPrimitive.useToastManager()
   return (
     <ToastPrimitive.Portal>
-      <ToastPrimitive.Viewport className="fixed inset-x-0 bottom-0 z-100 mx-auto flex w-full max-w-md flex-col-reverse gap-2 p-4 sm:bottom-4">
+      <ToastPrimitive.Viewport className="pointer-events-none fixed inset-x-0 bottom-0 z-100 mx-auto flex w-full max-w-md flex-col-reverse gap-2 p-4 sm:bottom-4">
         {toasts.map((toast) => (
           <ToastPrimitive.Root
             key={toast.id}
