@@ -260,11 +260,12 @@ export function ParticipantSelectorPage({
         })}
       </div>
 
-      {error && <p className="text-sm text-destructive">{error}</p>}
-
-      <Button size="touch" className="w-full" onClick={handleSave} disabled={saving}>
-        {saving ? "Salvando..." : "Salvar participantes"}
-      </Button>
+      <div className="sticky bottom-0 -mx-4 flex flex-col gap-2 border-t bg-background/95 p-4 backdrop-blur">
+        {error && <p className="text-sm text-destructive">{error}</p>}
+        <Button size="touch" className="w-full" onClick={handleSave} disabled={saving}>
+          {saving ? "Salvando..." : "Salvar participantes"}
+        </Button>
+      </div>
 
       <MatchQuickSettingsDialog
         open={settingsOpen}
