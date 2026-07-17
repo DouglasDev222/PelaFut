@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react"
 import { useParams, useNavigate } from "react-router-dom"
-import { Settings2 } from "lucide-react"
+import { Settings2, Undo2 } from "lucide-react"
 import { teamCapacity, useTeamFormation } from "@/features/teams/useTeamFormation"
 import { TeamsBoard } from "@/features/teams/TeamsBoard"
 import { TEAM_COLORS } from "@/features/teams/teamColors"
@@ -39,9 +39,11 @@ export function TeamFormationPage({
     hasSavedTeams,
     reserveDraftsActively,
     setReserveDraftsActively,
+    canUndoLastPick,
     setTeamColor,
     startDraft,
     pickPlayer,
+    undoLastPick,
     movePlayer,
     setCaptain,
     backToSetup,
@@ -185,7 +187,7 @@ export function TeamFormationPage({
       {phase === "draft" && (
         <div className="flex flex-col gap-4">
           <Card>
-            <CardHeader>
+            <CardHeader className="flex flex-row items-center justify-between gap-2">
               <CardTitle className="flex items-center gap-2 text-base">
                 <span
                   className="inline-block size-3 rounded-full border"
@@ -194,6 +196,11 @@ export function TeamFormationPage({
                 Vez do Time {teams[currentTeamIndex]?.number} escolher
                 {teams[currentTeamIndex]?.players.length === 0 ? " (capitão)" : ""}
               </CardTitle>
+              {canUndoLastPick && (
+                <Button variant="outline" size="sm" className="shrink-0" onClick={undoLastPick}>
+                  <Undo2 className="size-4" /> Corrigir
+                </Button>
+              )}
             </CardHeader>
             <CardContent className="flex flex-col gap-2">
               {availablePlayers.map((player) => (

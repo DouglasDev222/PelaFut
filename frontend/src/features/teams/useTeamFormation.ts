@@ -12,6 +12,14 @@ export interface FormationTeam {
 
 export type FormationPhase = "setup" | "draft" | "done"
 
+/** A full snapshot of the draft state taken before a pick, so it can be undone. */
+interface DraftSnapshot {
+  teams: FormationTeam[]
+  availablePlayers: Player[]
+  currentTeamIndex: number
+  phase: FormationPhase
+}
+
 export function captainFirst(team: FormationTeam): Player[] {
   if (!team.captainId) return team.players
   const captain = team.players.find((p) => p.id === team.captainId)
@@ -115,6 +123,9 @@ export function useTeamFormation(matchId: string) {
   // When on, a reserve team drafts its own players (and captain) in turn
   // order instead of being auto-filled with leftovers. Set on the setup card.
   const [reserveDraftsActively, setReserveDraftsActively] = useState(false)
+  // Undo stack for the draft: one snapshot per pick, letting the organizer
+  // step back and correct a mistaken choice.
+  const [draftHistory, setDraftHistory] = useState<DraftSnapshot[]>([])
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -180,6 +191,7 @@ export function useTeamFormation(matchId: string) {
     setTeams(emptyTeams(numTeams))
     setAvailablePlayers(loadedParticipants)
     setCurrentTeamIndex(0)
+    setDraftHistory([])
     setPhase("setup")
     setLoading(false)
   }, [matchId])
@@ -194,10 +206,19 @@ export function useTeamFormation(matchId: string) {
 
   function startDraft() {
     setCurrentTeamIndex(0)
+    setDraftHistory([])
     setPhase("draft")
   }
 
   function pickPlayer(playerId: string) {
+    // Reject invalid picks up front so we don't push a no-op undo snapshot.
+    const pickingTeam = teams[currentTeamIndex]
+    const pickedPlayer = availablePlayers.find((p) => p.id === playerId)
+    if (!pickingTeam || !pickedPlayer || pickingTeam.players.some((p) => p.id === pickedPlayer.id)) {
+      return
+    }
+    setDraftHistory((h) => [...h, { teams, availablePlayers, currentTeamIndex, phase }])
+
     let updatedTeams = teams
     setTeams((prev) => {
       const team = prev[currentTeamIndex]
@@ -259,6 +280,17 @@ export function useTeamFormation(matchId: string) {
     })
   }
 
+  /** Reverses the most recent pick, restoring the exact state before it. */
+  function undoLastPick() {
+    if (draftHistory.length === 0) return
+    const snapshot = draftHistory[draftHistory.length - 1]!
+    setTeams(snapshot.teams)
+    setAvailablePlayers(snapshot.availablePlayers)
+    setCurrentTeamIndex(snapshot.currentTeamIndex)
+    setPhase(snapshot.phase)
+    setDraftHistory((h) => h.slice(0, -1))
+  }
+
   function movePlayer(playerId: string, fromTeamIndex: number, toTeamIndex: number) {
     if (fromTeamIndex === toTeamIndex) return
     setTeams((prev) => {
@@ -295,6 +327,7 @@ export function useTeamFormation(matchId: string) {
     setTeams((prev) => prev.map((t) => ({ ...t, players: [], captainId: null })))
     setAvailablePlayers(participants)
     setCurrentTeamIndex(0)
+    setDraftHistory([])
     setPhase("setup")
   }, [participants])
 
@@ -307,6 +340,7 @@ export function useTeamFormation(matchId: string) {
     setAvailablePlayers(participants)
     setCurrentTeamIndex(0)
     setReserveDraftsActively(false)
+    setDraftHistory([])
     setPhase("setup")
   }
 
@@ -330,6 +364,7 @@ export function useTeamFormation(matchId: string) {
     setAvailablePlayers(participants)
     setCurrentTeamIndex(0)
     setReserveDraftsActively(false)
+    setDraftHistory([])
     setPhase("setup")
     return { error: null }
   }
@@ -403,9 +438,11 @@ export function useTeamFormation(matchId: string) {
     reserveDraftsActively,
     setReserveDraftsActively,
     changePlayersPerTeam,
+    canUndoLastPick: draftHistory.length > 0,
     setTeamColor,
     startDraft,
     pickPlayer,
+    undoLastPick,
     movePlayer,
     setCaptain,
     backToSetup,
