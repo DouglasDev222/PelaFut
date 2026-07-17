@@ -28,7 +28,7 @@ export function LoginForm() {
   }
 
   return (
-    <Card className="w-full max-w-sm">
+    <Card className="w-full border-none shadow-none sm:border sm:shadow-sm">
       <CardHeader>
         <CardTitle>Entrar</CardTitle>
       </CardHeader>
@@ -39,6 +39,8 @@ export function LoginForm() {
             <Input
               id="email"
               type="email"
+              inputMode="email"
+              autoComplete="email"
               required
               value={email}
               onChange={(e) => setEmail(e.target.value)}
@@ -49,13 +51,14 @@ export function LoginForm() {
             <Input
               id="password"
               type="password"
+              autoComplete="current-password"
               required
               value={password}
               onChange={(e) => setPassword(e.target.value)}
             />
           </div>
           {error && <p className="text-sm text-destructive">{error}</p>}
-          <Button type="submit" disabled={submitting}>
+          <Button type="submit" size="touch" className="w-full" disabled={submitting}>
             {submitting ? "Entrando..." : "Entrar"}
           </Button>
           <div className="flex justify-between text-sm text-muted-foreground">

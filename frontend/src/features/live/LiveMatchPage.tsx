@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react"
-import { Link, useParams } from "react-router-dom"
+import { useParams } from "react-router-dom"
+import { AlertTriangle, Trophy, Undo2 } from "lucide-react"
 import type { Player } from "@pelafut/shared"
 import {
   useLiveMatch,
@@ -9,11 +10,19 @@ import {
   type PendingTieOrder,
   type PenaltyShootoutState,
   type TieResolutionMode,
+  type TransitionInfo,
 } from "@/features/live/useLiveMatch"
 import { elapsedSecondsFor } from "@/features/live/rotation"
-import type { PenaltyState } from "@/features/live/penalties"
+import { penaltyKickStakes, type PenaltyState } from "@/features/live/penalties"
+import { ScoreClock, type ClockState } from "@/features/live/ScoreClock"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { Dialog, DialogPopup, DialogTitle } from "@/components/ui/dialog"
+import { ConfirmDialog } from "@/components/ui/confirm-dialog"
+import { EmptyState } from "@/components/ui/empty-state"
+import { HoldToConfirmButton } from "@/components/ui/hold-to-confirm-button"
+import { toastManager } from "@/components/ui/toast"
+import { TeamRosterCard } from "@/components/TeamRosterCard"
 import { cn } from "@/lib/utils"
 
 function formatClock(totalSeconds: number) {
@@ -21,14 +30,6 @@ function formatClock(totalSeconds: number) {
   const m = Math.floor(s / 60)
   const r = s % 60
   return `${String(m).padStart(2, "0")}:${String(r).padStart(2, "0")}`
-}
-
-function BackLink() {
-  return (
-    <Link to="/matches" className="text-sm text-muted-foreground underline">
-      ← Peladas
-    </Link>
-  )
 }
 
 function TeamBadge({ team }: { team: LiveTeam }) {
@@ -40,78 +41,90 @@ function TeamBadge({ team }: { team: LiveTeam }) {
   )
 }
 
-function GoalScorerPicker({
+function GoalScorerDialog({
+  open,
+  teamLabel,
   players,
   onPick,
   onNoScorer,
-  onCancel,
+  onOpenChange,
 }: {
+  open: boolean
+  teamLabel: string
   players: Player[]
   onPick: (playerId: string) => void
   onNoScorer: () => void
-  onCancel: () => void
+  onOpenChange: (open: boolean) => void
 }) {
   return (
-    <div className="flex flex-col gap-1 rounded-md border p-2">
-      <p className="text-xs text-muted-foreground">Quem fez o gol?</p>
-      <div className="flex flex-wrap gap-1.5">
-        {players.map((p) => (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogPopup>
+        <DialogTitle>Quem fez o gol? — {teamLabel}</DialogTitle>
+        <div className="flex flex-col gap-2">
+          {players.map((p) => (
+            <button
+              key={p.id}
+              type="button"
+              onClick={() => onPick(p.id)}
+              className="min-h-11 rounded-lg border px-3 py-2 text-left text-sm uppercase hover:bg-muted"
+            >
+              {p.name}
+            </button>
+          ))}
           <button
-            key={p.id}
             type="button"
-            onClick={() => onPick(p.id)}
-            className="rounded-md border px-2 py-1 text-xs hover:bg-muted"
+            onClick={onNoScorer}
+            className="min-h-11 rounded-lg border border-dashed px-3 py-2 text-left text-sm font-medium text-muted-foreground hover:bg-muted"
           >
-            {p.name}
+            NINGUÉM/CONTRA
           </button>
-        ))}
-        <button
-          type="button"
-          onClick={onNoScorer}
-          className="rounded-md border px-2 py-1 text-xs text-muted-foreground hover:bg-muted"
-        >
-          Gol sem autor
-        </button>
-        <button type="button" onClick={onCancel} className="rounded-md border px-2 py-1 text-xs text-muted-foreground">
-          Cancelar
-        </button>
-      </div>
-    </div>
+        </div>
+      </DialogPopup>
+    </Dialog>
   )
 }
 
-function AssistPicker({
+function AssistDialog({
+  open,
+  teamLabel,
   players,
   onPick,
   onSkip,
+  onOpenChange,
 }: {
+  open: boolean
+  teamLabel: string
   players: Player[]
   onPick: (playerId: string) => void
   onSkip: () => void
+  onOpenChange: (open: boolean) => void
 }) {
   return (
-    <div className="flex flex-col gap-1 rounded-md border p-2">
-      <p className="text-xs text-muted-foreground">Quem deu a assistência? (opcional)</p>
-      <div className="flex flex-wrap gap-1.5">
-        {players.map((p) => (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogPopup>
+        <DialogTitle>Quem deu a assistência? — {teamLabel}</DialogTitle>
+        <p className="-mt-2 text-xs text-muted-foreground">Opcional</p>
+        <div className="flex flex-col gap-2">
+          {players.map((p) => (
+            <button
+              key={p.id}
+              type="button"
+              onClick={() => onPick(p.id)}
+              className="min-h-11 rounded-lg border px-3 py-2 text-left text-sm uppercase hover:bg-muted"
+            >
+              {p.name}
+            </button>
+          ))}
           <button
-            key={p.id}
             type="button"
-            onClick={() => onPick(p.id)}
-            className="rounded-md border px-2 py-1 text-xs hover:bg-muted"
+            onClick={onSkip}
+            className="min-h-11 rounded-lg border border-dashed px-3 py-2 text-left text-sm font-medium text-muted-foreground hover:bg-muted"
           >
-            {p.name}
+            SEM ASSISTÊNCIA
           </button>
-        ))}
-        <button
-          type="button"
-          onClick={onSkip}
-          className="rounded-md border px-2 py-1 text-xs text-muted-foreground hover:bg-muted"
-        >
-          Sem assistência
-        </button>
-      </div>
-    </div>
+        </div>
+      </DialogPopup>
+    </Dialog>
   )
 }
 
@@ -143,7 +156,7 @@ function BorrowPrompt({
   const selected = need.candidates.filter((c) => selectedIds.has(c.player.id))
 
   return (
-    <Card>
+    <Card className="border-warning/40">
       <CardHeader>
         <CardTitle className="text-base">
           {team ? <TeamBadge team={team} /> : `Time`} vai jogar com menos jogadores
@@ -156,9 +169,10 @@ function BorrowPrompt({
         </p>
         <div className="flex flex-col gap-1">
           {need.candidates.map((c) => (
-            <label key={c.player.id} className="flex items-center gap-2 rounded-md border p-2 text-sm">
+            <label key={c.player.id} className="flex min-h-11 items-center gap-2 rounded-md border p-2 text-sm">
               <input
                 type="checkbox"
+                className="size-4"
                 checked={selectedIds.has(c.player.id)}
                 onChange={() => toggle(c.player.id)}
               />
@@ -167,7 +181,7 @@ function BorrowPrompt({
             </label>
           ))}
         </div>
-        <Button disabled={selected.length !== need.count} onClick={() => onConfirm(selected)}>
+        <Button size="touch" className="w-full" disabled={selected.length !== need.count} onClick={() => onConfirm(selected)}>
           Confirmar e começar o jogo
         </Button>
       </CardContent>
@@ -180,62 +194,156 @@ function TieDecisionPrompt({
   teams,
   allowBothLeave,
   onChoose,
+  onCancel,
 }: {
   decision: PendingTieOrder
   teams: LiveTeam[]
   allowBothLeave: boolean
   onChoose: (mode: TieResolutionMode) => void
+  onCancel: () => void
 }) {
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle className="text-base">
+    <Dialog open onOpenChange={(next) => { if (!next) onCancel() }}>
+      <DialogPopup>
+        <DialogTitle>
           Empate entre {teamLabel(teams, decision.homeTeamId)} e {teamLabel(teams, decision.awayTeamId)}! Como decidir?
-        </CardTitle>
-      </CardHeader>
-      <CardContent className="flex flex-wrap gap-2">
-        {allowBothLeave && (
-          <Button variant="outline" onClick={() => onChoose("both_leave")}>
-            Ambos saem
+        </DialogTitle>
+        <div className="flex flex-col gap-2">
+          {allowBothLeave && (
+            <Button size="touch" variant="outline" className="w-full" onClick={() => onChoose("both_leave")}>
+              Ambos saem
+            </Button>
+          )}
+          <Button size="touch" variant="outline" className="w-full" onClick={() => onChoose("penalties")}>
+            Decidir nos pênaltis
           </Button>
-        )}
-        <Button variant="outline" onClick={() => onChoose("penalties")}>
-          Decidir nos pênaltis
-        </Button>
-        <Button variant="outline" onClick={() => onChoose("direct")}>
-          Marcar vencedor direto
-        </Button>
-      </CardContent>
-    </Card>
+          <Button size="touch" variant="outline" className="w-full" onClick={() => onChoose("direct")}>
+            Marcar vencedor direto
+          </Button>
+        </div>
+      </DialogPopup>
+    </Dialog>
   )
 }
 
 function TwoTeamChoicePrompt({
   title,
-  buttonSuffix,
+  buttonLabel,
   decision,
   teams,
+  onCourtPlayers,
   onChoose,
+  onCancel,
 }: {
   title: string
-  buttonSuffix: string
+  buttonLabel: string
   decision: PendingTieOrder
   teams: LiveTeam[]
+  onCourtPlayers: (teamId: string) => Player[]
   onChoose: (teamId: string) => void
+  onCancel: () => void
 }) {
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle className="text-base">{title}</CardTitle>
-      </CardHeader>
-      <CardContent className="flex gap-2">
-        {[decision.homeTeamId, decision.awayTeamId].map((teamId) => (
-          <Button key={teamId} variant="outline" onClick={() => onChoose(teamId)}>
-            {teamLabel(teams, teamId)} {buttonSuffix}
-          </Button>
+    <Dialog open onOpenChange={(next) => { if (!next) onCancel() }}>
+      <DialogPopup>
+        <DialogTitle>{title}</DialogTitle>
+        <div className="flex flex-col gap-3">
+          {[decision.homeTeamId, decision.awayTeamId].map((teamId) => {
+            const team = teams.find((t) => t.id === teamId)
+            if (!team) return null
+            return (
+              <TeamRosterCard
+                key={teamId}
+                color={team.color}
+                number={team.number}
+                captainId={team.captainId}
+                players={onCourtPlayers(teamId)}
+                footer={
+                  <Button size="touch" variant="outline" className="w-full" onClick={() => onChoose(teamId)}>
+                    {buttonLabel}
+                  </Button>
+                }
+              />
+            )
+          })}
+        </div>
+      </DialogPopup>
+    </Dialog>
+  )
+}
+
+function PenaltyKickCircles({
+  kicks,
+  teamId,
+  bestOf,
+}: {
+  kicks: PenaltyShootoutState["kicks"]
+  teamId: string
+  bestOf: number
+}) {
+  const teamKicks = kicks.filter((k) => k.teamId === teamId)
+  const regulation = teamKicks.slice(0, bestOf)
+  const suddenDeath = teamKicks.slice(bestOf)
+  const isSuddenDeath = suddenDeath.length > 0
+
+  const circle = (k: PenaltyShootoutState["kicks"][number], compact: boolean) => (
+    <span
+      key={k.id}
+      className={cn(
+        "flex shrink-0 items-center justify-center rounded-full font-bold text-white",
+        compact ? "size-4 text-[9px]" : "size-6 text-xs",
+        k.scored ? "bg-success" : "bg-destructive"
+      )}
+    >
+      {k.scored ? "✓" : "✕"}
+    </span>
+  )
+
+  return (
+    <div className="flex flex-wrap items-center justify-center gap-1">
+      {regulation.map((k) => circle(k, isSuddenDeath))}
+      {isSuddenDeath && <span className="mx-0.5 text-muted-foreground/50">|</span>}
+      {suddenDeath.map((k) => circle(k, false))}
+    </div>
+  )
+}
+
+function PenaltyTeamColumn({
+  team,
+  players,
+  score,
+  isNextKicker,
+  kicks,
+  bestOf,
+}: {
+  team: LiveTeam | undefined
+  players: Player[]
+  score: number
+  isNextKicker: boolean
+  kicks: PenaltyShootoutState["kicks"]
+  bestOf: number
+}) {
+  return (
+    <div
+      className={cn(
+        "flex flex-1 flex-col items-center gap-2 rounded-xl border-2 p-4 transition-colors",
+        isNextKicker ? "border-primary bg-primary/5" : "border-transparent"
+      )}
+    >
+      <span className="flex items-center gap-1.5 text-sm font-medium">
+        <span className="inline-block size-3 rounded-full border" style={{ backgroundColor: team?.color }} />
+        Time {team?.number}
+      </span>
+      <span className="text-display text-5xl font-extrabold tabular-nums">{score}</span>
+      {team && <PenaltyKickCircles kicks={kicks} teamId={team.id} bestOf={bestOf} />}
+      <div className="flex flex-col items-center gap-0.5">
+        {players.map((p) => (
+          <span key={p.id} className="text-[10px] leading-tight text-muted-foreground uppercase">
+            {p.name}
+          </span>
         ))}
-      </CardContent>
-    </Card>
+      </div>
+    </div>
   )
 }
 
@@ -243,6 +351,9 @@ function PenaltyShootoutPanel({
   shootout,
   state,
   teams,
+  bestOf,
+  busy,
+  onCourtPlayers,
   onKick,
   onUndo,
   onConfirmWinner,
@@ -250,55 +361,323 @@ function PenaltyShootoutPanel({
   shootout: PenaltyShootoutState
   state: PenaltyState
   teams: LiveTeam[]
+  bestOf: number
+  busy: boolean
+  onCourtPlayers: (teamId: string) => Player[]
   onKick: (teamId: string, scored: boolean) => void
   onUndo: () => void
   onConfirmWinner: () => void
 }) {
+  const homeTeam = teams.find((t) => t.id === shootout.homeTeamId)
+  const awayTeam = teams.find((t) => t.id === shootout.awayTeamId)
+  const stakes = penaltyKickStakes(shootout.kicks, shootout.homeTeamId, shootout.awayTeamId, shootout.firstKickerTeamId, bestOf)
+
   return (
-    <Card>
+    <Card className="border-2 border-warning/40 bg-card">
       <CardHeader>
-        <CardTitle className="text-base">
-          Pênaltis: {teamLabel(teams, shootout.homeTeamId)} {state.homeScore} x {state.awayScore}{" "}
-          {teamLabel(teams, shootout.awayTeamId)}
-        </CardTitle>
+        <CardTitle className="text-center text-base">⚽ Disputa de pênaltis (melhor de {bestOf})</CardTitle>
       </CardHeader>
-      <CardContent className="flex flex-col gap-3">
-        <div className="flex flex-wrap gap-1 text-sm">
-          {shootout.kicks.map((kick) => (
-            <span key={kick.id} title={teamLabel(teams, kick.teamId)}>
-              {kick.teamId === shootout.homeTeamId ? "🏠" : "🚩"}
-              {kick.scored ? "✅" : "❌"}
-            </span>
-          ))}
+      <CardContent className="flex flex-col gap-4">
+        <div className="flex items-center gap-2">
+          <PenaltyTeamColumn
+            team={homeTeam}
+            players={onCourtPlayers(shootout.homeTeamId)}
+            score={state.homeScore}
+            isNextKicker={!state.decided && state.nextKickerTeamId === shootout.homeTeamId}
+            kicks={shootout.kicks}
+            bestOf={bestOf}
+          />
+          <span className="text-lg font-medium text-muted-foreground">x</span>
+          <PenaltyTeamColumn
+            team={awayTeam}
+            players={onCourtPlayers(shootout.awayTeamId)}
+            score={state.awayScore}
+            isNextKicker={!state.decided && state.nextKickerTeamId === shootout.awayTeamId}
+            kicks={shootout.kicks}
+            bestOf={bestOf}
+          />
         </div>
 
         {!state.decided && (
-          <>
-            <p className="text-sm text-muted-foreground">
+          <div className="flex flex-col gap-2">
+            <p className="text-center text-sm font-medium">
               Cobrança de {teamLabel(teams, state.nextKickerTeamId)}
             </p>
+            {stakes.winsIfScored && (
+              <p className="text-center text-xs font-semibold text-success">Se marcar, vence a disputa!</p>
+            )}
+            {stakes.eliminatedIfMissed && (
+              <p className="text-center text-xs font-semibold text-destructive">Se perder, a disputa acaba!</p>
+            )}
             <div className="flex gap-2">
-              <Button onClick={() => onKick(state.nextKickerTeamId, true)}>Marcou</Button>
-              <Button variant="outline" onClick={() => onKick(state.nextKickerTeamId, false)}>
+              <Button
+                size="touch"
+                variant="success"
+                className="flex-1"
+                disabled={busy}
+                onClick={() => onKick(state.nextKickerTeamId, true)}
+              >
+                Marcou
+              </Button>
+              <Button
+                size="touch"
+                variant="destructive"
+                className="flex-1 bg-destructive text-white hover:bg-destructive/90"
+                disabled={busy}
+                onClick={() => onKick(state.nextKickerTeamId, false)}
+              >
                 Perdeu
               </Button>
             </div>
-          </>
-        )}
-
-        {shootout.kicks.length > 0 && (
-          <Button variant="outline" size="sm" className="self-start" onClick={onUndo}>
-            Desfazer última cobrança
-          </Button>
+          </div>
         )}
 
         {state.decided && state.winnerTeamId && (
-          <Button onClick={onConfirmWinner}>
+          <Button size="touch" className="w-full" disabled={busy} onClick={onConfirmWinner}>
             Confirmar {teamLabel(teams, state.winnerTeamId)} venceu nos pênaltis
+          </Button>
+        )}
+
+        {shootout.kicks.length > 0 && (
+          <Button variant="ghost" size="sm" className="self-center text-muted-foreground" disabled={busy} onClick={onUndo}>
+            Desfazer última cobrança
           </Button>
         )}
       </CardContent>
     </Card>
+  )
+}
+
+function TransitionDialog({
+  transition,
+  onContinue,
+}: {
+  transition: TransitionInfo
+  onContinue: () => void
+}) {
+  return (
+    <Dialog open onOpenChange={() => {}} disablePointerDismissal>
+      <DialogPopup showClose={false}>
+        <DialogTitle>Troca de times</DialogTitle>
+        <div className="flex flex-col gap-4">
+          {transition.leaving.length > 0 && (
+            <div className="flex flex-col gap-2">
+              <p className="text-sm font-medium text-destructive">Saindo de quadra</p>
+              {transition.leaving.map((t) => (
+                <TeamRosterCard
+                  key={t.id}
+                  color={t.color}
+                  number={t.number}
+                  players={t.players}
+                  captainId={t.captainId}
+                />
+              ))}
+            </div>
+          )}
+          {transition.entering.length > 0 && (
+            <div className="flex flex-col gap-2">
+              <p className="text-sm font-medium text-primary">Entrando em quadra</p>
+              {transition.entering.map((t) => (
+                <TeamRosterCard
+                  key={t.id}
+                  color={t.color}
+                  number={t.number}
+                  players={t.players}
+                  captainId={t.captainId}
+                />
+              ))}
+            </div>
+          )}
+        </div>
+        <Button size="touch" className="w-full" onClick={onContinue}>
+          Continuar
+        </Button>
+      </DialogPopup>
+    </Dialog>
+  )
+}
+
+interface RoundGoalLite {
+  id: string
+  teamId: string
+  playerId: string | null
+  assistPlayerId: string | null
+}
+
+function GoalHistoryRow({
+  goal,
+  playersById,
+  onOpen,
+}: {
+  goal: RoundGoalLite
+  playersById: Map<string, Player>
+  onOpen: (goal: RoundGoalLite) => void
+}) {
+  const scorerName = goal.playerId ? playersById.get(goal.playerId)?.name ?? "?" : "NINGUÉM/CONTRA"
+  const assistName = goal.assistPlayerId ? playersById.get(goal.assistPlayerId)?.name ?? "?" : null
+
+  return (
+    <button
+      type="button"
+      onClick={() => onOpen(goal)}
+      className="flex min-w-0 flex-col rounded-md border px-2 py-1.5 text-left hover:bg-muted"
+    >
+      <span className="truncate text-xs font-medium uppercase">{scorerName}</span>
+      {assistName && (
+        <span className="truncate text-[11px] text-muted-foreground uppercase">assist. {assistName}</span>
+      )}
+    </button>
+  )
+}
+
+function GoalActionsDialog({
+  open,
+  goal,
+  scorerName,
+  onOpenChange,
+  onRemove,
+  onChangeScorer,
+  onChangeAssist,
+}: {
+  open: boolean
+  goal: RoundGoalLite | null
+  scorerName: string
+  onOpenChange: (open: boolean) => void
+  onRemove: () => void
+  onChangeScorer: () => void
+  onChangeAssist: () => void
+}) {
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogPopup>
+        <DialogTitle>
+          Gol de <span className="uppercase">{scorerName}</span>
+        </DialogTitle>
+        <div className="flex flex-col gap-2">
+          <Button size="touch" variant="outline" className="w-full" onClick={onChangeScorer}>
+            Trocar autor do gol
+          </Button>
+          {goal?.playerId && (
+            <Button size="touch" variant="outline" className="w-full" onClick={onChangeAssist}>
+              {goal.assistPlayerId ? "Trocar assistência" : "Adicionar assistência"}
+            </Button>
+          )}
+          <Button
+            size="touch"
+            variant="destructive"
+            className="w-full bg-destructive text-white hover:bg-destructive/90"
+            onClick={onRemove}
+          >
+            Remover gol
+          </Button>
+        </div>
+      </DialogPopup>
+    </Dialog>
+  )
+}
+
+function ConfirmHoldDialog({
+  open,
+  title,
+  description,
+  confirmLabel,
+  holdMs,
+  onOpenChange,
+  onConfirm,
+}: {
+  open: boolean
+  title: string
+  description: string
+  confirmLabel: string
+  holdMs?: number
+  onOpenChange: (open: boolean) => void
+  onConfirm: () => void
+}) {
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogPopup>
+        <DialogTitle>{title}</DialogTitle>
+        <p className="text-sm text-muted-foreground">{description}</p>
+        <div className="flex flex-col gap-2">
+          <HoldToConfirmButton
+            variant="destructive"
+            className="bg-destructive text-white hover:bg-destructive/90"
+            holdMs={holdMs}
+            onConfirm={onConfirm}
+          >
+            {confirmLabel}
+          </HoldToConfirmButton>
+          <Button size="touch" variant="outline" className="w-full" onClick={() => onOpenChange(false)}>
+            Voltar
+          </Button>
+        </div>
+      </DialogPopup>
+    </Dialog>
+  )
+}
+
+function PenaltyFirstKickerPrompt({
+  decision,
+  teams,
+  defaultBestOf,
+  onCourtPlayers,
+  onChoose,
+  onCancel,
+}: {
+  decision: PendingTieOrder
+  teams: LiveTeam[]
+  defaultBestOf: number
+  onCourtPlayers: (teamId: string) => Player[]
+  onChoose: (teamId: string, bestOf: number) => void
+  onCancel: () => void
+}) {
+  const [bestOf, setBestOf] = useState(defaultBestOf)
+
+  return (
+    <Dialog open onOpenChange={(next) => { if (!next) onCancel() }}>
+      <DialogPopup>
+        <DialogTitle>Qual time bate primeiro nos pênaltis?</DialogTitle>
+        <div className="flex flex-col gap-4">
+          <div className="flex flex-col gap-1.5">
+            <span className="text-sm font-medium text-muted-foreground">Melhor de</span>
+            <div className="flex gap-2">
+              {[3, 4, 5].map((n) => (
+                <Button
+                  key={n}
+                  type="button"
+                  size="touch"
+                  variant={bestOf === n ? "default" : "outline"}
+                  className="flex-1"
+                  onClick={() => setBestOf(n)}
+                >
+                  {n}
+                </Button>
+              ))}
+            </div>
+          </div>
+          <div className="flex flex-col gap-3">
+            {[decision.homeTeamId, decision.awayTeamId].map((teamId) => {
+              const team = teams.find((t) => t.id === teamId)
+              if (!team) return null
+              return (
+                <TeamRosterCard
+                  key={teamId}
+                  color={team.color}
+                  number={team.number}
+                  captainId={team.captainId}
+                  players={onCourtPlayers(teamId)}
+                  footer={
+                    <Button size="touch" variant="outline" className="w-full" onClick={() => onChoose(teamId, bestOf)}>
+                      Começa
+                    </Button>
+                  }
+                />
+              )
+            })}
+          </div>
+        </div>
+      </DialogPopup>
+    </Dialog>
   )
 }
 
@@ -321,6 +700,9 @@ export function LiveMatchPage() {
     pendingPenaltyFirstKicker,
     penaltyShootout,
     penaltyState,
+    defaultPenaltyBestOf,
+    pendingTransition,
+    canUndoLastRound,
     phase,
     loading,
     error,
@@ -330,6 +712,7 @@ export function LiveMatchPage() {
     suggestedBorrowFor,
     confirmBorrow,
     endRound,
+    cancelTieFlow,
     chooseTieResolution,
     confirmTieOrder,
     declareDirectWinner,
@@ -337,14 +720,22 @@ export function LiveMatchPage() {
     recordPenaltyKick,
     undoLastPenaltyKick,
     confirmPenaltyWinner,
+    confirmTransition,
+    undoLastRound,
     finishMatch,
     reopenMatch,
     pauseTimer,
     resumeTimer,
+    restartTimer,
   } = useLiveMatch(id!)
 
   const [scoringForTeam, setScoringForTeam] = useState<string | null>(null)
   const [pendingAssistFor, setPendingAssistFor] = useState<{ teamId: string; scorerId: string } | null>(null)
+  const [goalActionsFor, setGoalActionsFor] = useState<RoundGoalLite | null>(null)
+  const [endRoundConfirmOpen, setEndRoundConfirmOpen] = useState(false)
+  const [undoRoundConfirmOpen, setUndoRoundConfirmOpen] = useState(false)
+  const [finishConfirmOpen, setFinishConfirmOpen] = useState(false)
+  const [busy, setBusy] = useState(false)
   const [, forceTick] = useState(0)
 
   useEffect(() => {
@@ -362,6 +753,69 @@ export function LiveMatchPage() {
     return () => clearInterval(interval)
   }, [running, currentRound?.id])
 
+  // A single lock across every async round-affecting action — a live game is
+  // exactly the situation where a double-tap (two goals from one press) is
+  // costly and easy to make by accident.
+  async function guarded(action: () => Promise<unknown>) {
+    if (busy) return
+    setBusy(true)
+    try {
+      await action()
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  function handleRemoveGoal(goal: RoundGoalLite) {
+    removeGoal(goal.id)
+    // The undo action must fire at most once — otherwise a double-tap on
+    // "Desfazer" (or any other double-invocation) recreates the goal twice.
+    let undone = false
+    let toastId = ""
+    toastId = toastManager.add({
+      title: "Gol removido",
+      type: "success",
+      actionProps: {
+        children: "Desfazer",
+        onClick: () => {
+          if (undone) return
+          undone = true
+          toastManager.close(toastId)
+          recordGoal(goal.teamId, goal.playerId, goal.assistPlayerId)
+        },
+      },
+    })
+  }
+
+  function handleConfirmEndRound() {
+    setEndRoundConfirmOpen(false)
+    guarded(endRound)
+  }
+
+  function handleConfirmUndoRound() {
+    setUndoRoundConfirmOpen(false)
+    guarded(undoLastRound)
+  }
+
+  function handleConfirmFinishMatch() {
+    setFinishConfirmOpen(false)
+    finishMatch()
+    let undone = false
+    let toastId = ""
+    toastId = toastManager.add({
+      title: "Pelada encerrada",
+      actionProps: {
+        children: "Reabrir",
+        onClick: () => {
+          if (undone) return
+          undone = true
+          toastManager.close(toastId)
+          reopenMatch()
+        },
+      },
+    })
+  }
+
   if (loading) return null
 
   if (!match) {
@@ -369,22 +823,47 @@ export function LiveMatchPage() {
   }
 
   if (phase === "not_started") {
+    const ordered = [...teams].sort((a, b) => a.queuePosition - b.queuePosition)
+    const [first, second, ...rest] = ordered
     return (
-      <div className="flex w-full max-w-2xl flex-col gap-4">
-        <BackLink />
-        <h1 className="text-xl font-semibold">Partida ao vivo</h1>
+      <div className="flex w-full flex-col gap-4">
         {error && <p className="text-sm text-destructive">{error}</p>}
         {teams.length < 2 ? (
-          <p className="text-sm text-muted-foreground">
-            É preciso pelo menos 2 times formados para iniciar a partida ao vivo.
-          </p>
+          <EmptyState
+            icon={Trophy}
+            title="Times ainda não formados"
+            description="É preciso pelo menos 2 times formados para iniciar a partida ao vivo."
+          />
         ) : (
           <>
-            <p className="text-sm text-muted-foreground">
-              {teams[0] ? <TeamBadge team={teams[0]} /> : null} joga primeiro contra{" "}
-              {teams[1] ? <TeamBadge team={teams[1]} /> : null}. Os demais times esperam a vez na fila.
-            </p>
-            <Button onClick={startLiveMatch}>Iniciar partida ao vivo</Button>
+            <p className="text-sm text-muted-foreground">Jogam primeiro:</p>
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+              {first && (
+                <TeamRosterCard color={first.color} number={first.number} captainId={first.captainId} players={first.players} />
+              )}
+              {second && (
+                <TeamRosterCard color={second.color} number={second.number} captainId={second.captainId} players={second.players} />
+              )}
+            </div>
+            {rest.length > 0 && (
+              <div className="flex flex-col gap-2">
+                <p className="text-sm font-medium text-muted-foreground">Aguardando na fila</p>
+                {rest.map((t, i) => (
+                  <TeamRosterCard
+                    key={t.id}
+                    variant="collapsible"
+                    color={t.color}
+                    number={t.number}
+                    captainId={t.captainId}
+                    players={t.players}
+                    headerRight={<span className="text-xs text-muted-foreground">{i + 1}º na fila</span>}
+                  />
+                ))}
+              </div>
+            )}
+            <Button size="touch" className="w-full" disabled={busy} onClick={() => guarded(startLiveMatch)}>
+              Iniciar partida ao vivo
+            </Button>
           </>
         )}
       </div>
@@ -394,20 +873,26 @@ export function LiveMatchPage() {
   if (phase === "finished") {
     const finalOrder = [...teams].sort((a, b) => a.queuePosition - b.queuePosition)
     return (
-      <div className="flex w-full max-w-2xl flex-col gap-4">
-        <BackLink />
-        <h1 className="text-xl font-semibold">Partida ao vivo</h1>
-        <p className="text-sm text-muted-foreground">
-          Essa pelada foi encerrada. Ordem final da fila:
-        </p>
-        <div className="flex flex-col gap-1 text-sm">
+      <div className="flex w-full flex-col gap-4">
+        <div className="flex flex-col items-center gap-2 rounded-2xl border bg-card p-6 text-center">
+          <Trophy className="size-8 text-muted-foreground" />
+          <p className="font-medium">Pelada encerrada</p>
+          <p className="text-sm text-muted-foreground">Ordem final da fila abaixo.</p>
+        </div>
+        <div className="flex flex-col gap-2">
           {finalOrder.map((t, i) => (
-            <p key={t.id}>
-              {i + 1}º <TeamBadge team={t} />
-            </p>
+            <TeamRosterCard
+              key={t.id}
+              variant="collapsible"
+              color={t.color}
+              number={t.number}
+              captainId={t.captainId}
+              players={t.players}
+              headerRight={<span className="text-xs text-muted-foreground">{i + 1}º</span>}
+            />
           ))}
         </div>
-        <Button variant="outline" className="self-start" onClick={reopenMatch}>
+        <Button size="touch" variant="outline" className="w-full" disabled={busy} onClick={() => guarded(reopenMatch)}>
           Reabrir partida
         </Button>
       </div>
@@ -441,7 +926,20 @@ export function LiveMatchPage() {
   const elapsed = currentRound ? elapsedSecondsFor(currentRound) : 0
   const remaining = durationSeconds - elapsed
   const inStoppage = hasTimer && remaining <= 0
-  const clockLabel = inStoppage ? `+${formatClock(elapsed - durationSeconds)}` : formatClock(remaining)
+  const clockLabel = hasTimer ? (inStoppage ? `+${formatClock(elapsed - durationSeconds)}` : formatClock(remaining)) : undefined
+  const neverStarted = currentRound?.pausedAt === currentRound?.startedAt
+  // Goals-only matches have no clock concept to "start" — only gate recording
+  // on the clock when there actually is one.
+  const canRecordGoals = !hasTimer || !neverStarted
+  const clockState: ClockState | undefined = !hasTimer
+    ? undefined
+    : inStoppage
+      ? "stoppage"
+      : running
+        ? "running"
+        : neverStarted
+          ? "not_started"
+          : "paused"
 
   const goalsToWin = match.goals_to_win
   const reachedGoalTarget =
@@ -458,14 +956,11 @@ export function LiveMatchPage() {
   )
 
   return (
-    <div className="flex w-full max-w-2xl flex-col gap-4">
-      <BackLink />
-      <div className="flex items-center justify-between">
-        <h1 className="text-xl font-semibold">Partida ao vivo</h1>
-        <Button variant="outline" size="sm" onClick={finishMatch}>
-          Encerrar pelada
-        </Button>
-      </div>
+    <div className="flex w-full flex-col gap-4">
+      {pendingTransition && (
+        <TransitionDialog transition={pendingTransition} onContinue={confirmTransition} />
+      )}
+
       {error && <p className="text-sm text-destructive">{error}</p>}
 
       {conflictWarnings.map((w) => {
@@ -474,12 +969,15 @@ export function LiveMatchPage() {
         return (
           <p
             key={w.teamId}
-            className="rounded-md border border-amber-600 bg-amber-50 p-2 text-sm text-amber-700 dark:bg-transparent dark:text-amber-500"
+            className="flex items-start gap-2 rounded-lg border border-warning/40 bg-warning/10 p-3 text-sm text-warning"
           >
-            ⚠ {team ? `Time ${team.number}` : "Um time"} está com{" "}
-            {w.players.map((p) => p.name).join(", ")} jogando emprestado
-            {w.players.length === 1 ? "" : "s"} pelo {lentTo ? `Time ${lentTo.number}` : "outro time"}{" "}
-            nesta rodada — ajuste manualmente quem vai jogar.
+            <AlertTriangle className="mt-0.5 size-4 shrink-0" />
+            <span>
+              {team ? `Time ${team.number}` : "Um time"} está com{" "}
+              {w.players.map((p) => p.name).join(", ")} jogando emprestado
+              {w.players.length === 1 ? "" : "s"} pelo {lentTo ? `Time ${lentTo.number}` : "outro time"}{" "}
+              nesta rodada — ajuste manualmente quem vai jogar.
+            </span>
           </p>
         )
       })}
@@ -490,47 +988,62 @@ export function LiveMatchPage() {
           teams={teams}
           allowBothLeave={match.tie_both_leave_allowed}
           onChoose={chooseTieResolution}
+          onCancel={cancelTieFlow}
         />
       )}
 
       {pendingTieOrder && (
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-base">Qual time vai para o fim da fila?</CardTitle>
-          </CardHeader>
-          <CardContent className="flex flex-col gap-2">
+        <Dialog open onOpenChange={(next) => { if (!next) cancelTieFlow() }}>
+          <DialogPopup>
+            <DialogTitle>Qual time vai para o fim da fila?</DialogTitle>
             <p className="text-sm text-muted-foreground">
               Os dois times saem da quadra. Escolha qual dos dois fica mais atrás na fila (o outro
               volta um pouco mais cedo).
             </p>
-            <div className="flex gap-2">
-              {[pendingTieOrder.homeTeamId, pendingTieOrder.awayTeamId].map((teamId) => (
-                <Button key={teamId} variant="outline" onClick={() => confirmTieOrder(teamId)}>
-                  {teamLabel(teams, teamId)} fica por último
-                </Button>
-              ))}
+            <div className="flex flex-col gap-3">
+              {[pendingTieOrder.homeTeamId, pendingTieOrder.awayTeamId].map((teamId) => {
+                const team = teams.find((t) => t.id === teamId)
+                if (!team) return null
+                return (
+                  <TeamRosterCard
+                    key={teamId}
+                    color={team.color}
+                    number={team.number}
+                    captainId={team.captainId}
+                    players={onCourtPlayers(teamId)}
+                    footer={
+                      <Button size="touch" variant="outline" className="w-full" onClick={() => confirmTieOrder(teamId)}>
+                        Fica por último
+                      </Button>
+                    }
+                  />
+                )
+              })}
             </div>
-          </CardContent>
-        </Card>
+          </DialogPopup>
+        </Dialog>
       )}
 
       {pendingDirectWinner && (
         <TwoTeamChoicePrompt
           title="Qual time venceu?"
-          buttonSuffix="venceu"
+          buttonLabel="Venceu"
           decision={pendingDirectWinner}
           teams={teams}
+          onCourtPlayers={onCourtPlayers}
           onChoose={declareDirectWinner}
+          onCancel={cancelTieFlow}
         />
       )}
 
       {pendingPenaltyFirstKicker && (
-        <TwoTeamChoicePrompt
-          title="Qual time bate primeiro nos pênaltis?"
-          buttonSuffix="começa"
+        <PenaltyFirstKickerPrompt
           decision={pendingPenaltyFirstKicker}
           teams={teams}
+          defaultBestOf={defaultPenaltyBestOf}
+          onCourtPlayers={onCourtPlayers}
           onChoose={startPenaltyShootout}
+          onCancel={cancelTieFlow}
         />
       )}
 
@@ -539,9 +1052,12 @@ export function LiveMatchPage() {
           shootout={penaltyShootout}
           state={penaltyState}
           teams={teams}
-          onKick={recordPenaltyKick}
-          onUndo={undoLastPenaltyKick}
-          onConfirmWinner={confirmPenaltyWinner}
+          bestOf={penaltyShootout.regulationKicks}
+          busy={busy}
+          onCourtPlayers={onCourtPlayers}
+          onKick={(teamId, scored) => guarded(() => recordPenaltyKick(teamId, scored))}
+          onUndo={() => guarded(undoLastPenaltyKick)}
+          onConfirmWinner={() => guarded(confirmPenaltyWinner)}
         />
       )}
 
@@ -552,161 +1068,269 @@ export function LiveMatchPage() {
             need={need}
             suggested={suggestedBorrowFor(need)}
             team={teams.find((t) => t.id === need.teamId)}
-            onConfirm={(selected) => confirmBorrow(need.teamId, selected)}
+            onConfirm={(selected) => guarded(() => confirmBorrow(need.teamId, selected))}
           />
         ))}
 
-      {!tieFlowActive && phase === "live" && currentRound && (
+      {phase === "live" && currentRound && (
         <>
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center justify-between text-base">
-                <span className="flex items-center gap-2">
-                  {homeTeam && <TeamBadge team={homeTeam} />}
-                  <span className="font-mono text-lg">{homeGoals.length}</span>
-                  <span className="text-muted-foreground">x</span>
-                  <span className="font-mono text-lg">{awayGoals.length}</span>
-                  {awayTeam && <TeamBadge team={awayTeam} />}
-                </span>
-                {hasTimer && (
-                  <span className={cn("font-mono text-base", inStoppage && "text-amber-600 dark:text-amber-500")}>
-                    {inStoppage ? "Acréscimos " : ""}
-                    {clockLabel}
-                  </span>
-                )}
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="flex flex-col gap-3">
-              {hasTimer && (
+          <ScoreClock
+            home={homeTeam && { number: homeTeam.number, color: homeTeam.color }}
+            away={awayTeam && { number: awayTeam.number, color: awayTeam.color }}
+            homeScore={homeGoals.length}
+            awayScore={awayGoals.length}
+            clockLabel={clockLabel}
+            clockState={clockState}
+          />
+
+          {hasTimer && (
+            <>
+              {running ? (
                 <Button
+                  size="touch"
                   variant="outline"
-                  size="sm"
-                  className="self-start"
-                  onClick={() => (running ? pauseTimer() : resumeTimer())}
+                  className="w-full border-warning/40 bg-warning/10 text-warning hover:bg-warning/20"
+                  disabled={busy}
+                  onClick={() => guarded(pauseTimer)}
                 >
-                  {running ? "Pausar cronômetro" : "Retomar cronômetro"}
+                  Pausar
                 </Button>
+              ) : neverStarted ? (
+                <Button size="touch" className="w-full" disabled={busy} onClick={() => guarded(resumeTimer)}>
+                  Iniciar
+                </Button>
+              ) : (
+                <div className="flex gap-2">
+                  <Button size="touch" className="flex-1" disabled={busy} onClick={() => guarded(resumeTimer)}>
+                    Retomar
+                  </Button>
+                  <Button
+                    size="touch"
+                    variant="outline"
+                    className="flex-1"
+                    disabled={busy}
+                    onClick={() => guarded(restartTimer)}
+                  >
+                    Recomeçar
+                  </Button>
+                </div>
               )}
-              {reachedGoalTarget && (
-                <p className="text-sm text-amber-600 dark:text-amber-500">
-                  Meta de {goalsToWin} gols atingida — encerre o jogo quando quiser.
+              {neverStarted && (
+                <p className="text-center text-xs text-muted-foreground">
+                  Inicie o cronômetro para poder registrar gols.
                 </p>
               )}
+            </>
+          )}
 
-              <div className="grid grid-cols-2 gap-4">
-                <div className="flex flex-col gap-2">
-                  {pendingAssistFor?.teamId === currentRound.homeTeamId ? (
-                    <AssistPicker
-                      players={onCourtPlayers(currentRound.homeTeamId).filter(
-                        (p) => p.id !== pendingAssistFor.scorerId
-                      )}
-                      onPick={(assistId) => {
-                        recordGoal(currentRound.homeTeamId, pendingAssistFor.scorerId, assistId)
-                        setPendingAssistFor(null)
-                      }}
-                      onSkip={() => {
-                        recordGoal(currentRound.homeTeamId, pendingAssistFor.scorerId, null)
-                        setPendingAssistFor(null)
-                      }}
-                    />
-                  ) : scoringForTeam === currentRound.homeTeamId ? (
-                    <GoalScorerPicker
-                      players={onCourtPlayers(currentRound.homeTeamId)}
-                      onPick={(playerId) => {
-                        setScoringForTeam(null)
-                        setPendingAssistFor({ teamId: currentRound.homeTeamId, scorerId: playerId })
-                      }}
-                      onNoScorer={() => {
-                        recordGoal(currentRound.homeTeamId, null)
-                        setScoringForTeam(null)
-                      }}
-                      onCancel={() => setScoringForTeam(null)}
-                    />
-                  ) : (
-                    <Button variant="outline" onClick={() => setScoringForTeam(currentRound.homeTeamId)}>
-                      +1 gol {homeTeam ? `Time ${homeTeam.number}` : ""}
+          {reachedGoalTarget && (
+            <p className="rounded-lg border border-warning/40 bg-warning/10 p-3 text-sm text-warning">
+              Meta de {goalsToWin} gols atingida — encerre o jogo quando quiser.
+            </p>
+          )}
+
+          {/* Team + roster + goal button live in one card each, side by side —
+              so which button belongs to which team is never ambiguous, even
+              when the team numbers themselves (Time 3 vs Time 4) are easy to
+              mix up mid-game. */}
+          <div className="grid grid-cols-2 gap-2">
+            {homeTeam && (
+              <TeamRosterCard
+                color={homeTeam.color}
+                number={homeTeam.number}
+                captainId={homeTeam.captainId}
+                players={onCourtPlayers(homeTeam.id)}
+                footer={
+                  <>
+                    <Button
+                      size="touch"
+                      className="w-full"
+                      disabled={!canRecordGoals}
+                      onClick={() => setScoringForTeam(currentRound.homeTeamId)}
+                    >
+                      GOL TIME {homeTeam.number}
                     </Button>
-                  )}
-                  {homeGoals.map((g) => (
-                    <p key={g.id} className="flex items-center justify-between text-xs text-muted-foreground">
-                      <span>
-                        ⚽ {g.playerId ? allPlayersById.get(g.playerId)?.name ?? "?" : "Gol (sem autor)"}
-                        {g.assistPlayerId
-                          ? ` · assist. ${allPlayersById.get(g.assistPlayerId)?.name ?? "?"}`
-                          : ""}
-                      </span>
-                      <button type="button" className="underline" onClick={() => removeGoal(g.id)}>
-                        remover
-                      </button>
-                    </p>
-                  ))}
-                </div>
-                <div className="flex flex-col gap-2">
-                  {pendingAssistFor?.teamId === currentRound.awayTeamId ? (
-                    <AssistPicker
-                      players={onCourtPlayers(currentRound.awayTeamId).filter(
-                        (p) => p.id !== pendingAssistFor.scorerId
-                      )}
-                      onPick={(assistId) => {
-                        recordGoal(currentRound.awayTeamId, pendingAssistFor.scorerId, assistId)
-                        setPendingAssistFor(null)
-                      }}
-                      onSkip={() => {
-                        recordGoal(currentRound.awayTeamId, pendingAssistFor.scorerId, null)
-                        setPendingAssistFor(null)
-                      }}
-                    />
-                  ) : scoringForTeam === currentRound.awayTeamId ? (
-                    <GoalScorerPicker
-                      players={onCourtPlayers(currentRound.awayTeamId)}
-                      onPick={(playerId) => {
-                        setScoringForTeam(null)
-                        setPendingAssistFor({ teamId: currentRound.awayTeamId, scorerId: playerId })
-                      }}
-                      onNoScorer={() => {
-                        recordGoal(currentRound.awayTeamId, null)
-                        setScoringForTeam(null)
-                      }}
-                      onCancel={() => setScoringForTeam(null)}
-                    />
-                  ) : (
-                    <Button variant="outline" onClick={() => setScoringForTeam(currentRound.awayTeamId)}>
-                      +1 gol {awayTeam ? `Time ${awayTeam.number}` : ""}
+                    {homeGoals.map((g) => (
+                      <GoalHistoryRow key={g.id} goal={g} playersById={allPlayersById} onOpen={setGoalActionsFor} />
+                    ))}
+                  </>
+                }
+              />
+            )}
+            {awayTeam && (
+              <TeamRosterCard
+                color={awayTeam.color}
+                number={awayTeam.number}
+                captainId={awayTeam.captainId}
+                players={onCourtPlayers(awayTeam.id)}
+                footer={
+                  <>
+                    <Button
+                      size="touch"
+                      className="w-full"
+                      disabled={!canRecordGoals}
+                      onClick={() => setScoringForTeam(currentRound.awayTeamId)}
+                    >
+                      GOL TIME {awayTeam.number}
                     </Button>
-                  )}
-                  {awayGoals.map((g) => (
-                    <p key={g.id} className="flex items-center justify-between text-xs text-muted-foreground">
-                      <span>
-                        ⚽ {g.playerId ? allPlayersById.get(g.playerId)?.name ?? "?" : "Gol (sem autor)"}
-                        {g.assistPlayerId
-                          ? ` · assist. ${allPlayersById.get(g.assistPlayerId)?.name ?? "?"}`
-                          : ""}
-                      </span>
-                      <button type="button" className="underline" onClick={() => removeGoal(g.id)}>
-                        remover
-                      </button>
-                    </p>
-                  ))}
-                </div>
-              </div>
+                    {awayGoals.map((g) => (
+                      <GoalHistoryRow key={g.id} goal={g} playersById={allPlayersById} onOpen={setGoalActionsFor} />
+                    ))}
+                  </>
+                }
+              />
+            )}
+          </div>
 
-              <Button onClick={endRound}>Encerrar jogo</Button>
-            </CardContent>
-          </Card>
+          <GoalScorerDialog
+            open={scoringForTeam !== null}
+            teamLabel={teamLabel(teams, scoringForTeam ?? undefined)}
+            players={scoringForTeam ? onCourtPlayers(scoringForTeam) : []}
+            onPick={(playerId) => {
+              const teamId = scoringForTeam!
+              setScoringForTeam(null)
+              setPendingAssistFor({ teamId, scorerId: playerId })
+            }}
+            onNoScorer={() => {
+              if (!scoringForTeam) return
+              recordGoal(scoringForTeam, null)
+              setScoringForTeam(null)
+            }}
+            onOpenChange={(next) => {
+              if (!next) setScoringForTeam(null)
+            }}
+          />
 
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-sm">Fila de espera</CardTitle>
-            </CardHeader>
-            <CardContent className="flex flex-col gap-1 text-sm">
-              {queue.length === 0 && <p className="text-muted-foreground">Nenhum time esperando.</p>}
-              {queue.map((t, i) => (
-                <p key={t.id}>
-                  {i + 1}º <TeamBadge team={t} />
-                </p>
-              ))}
-            </CardContent>
-          </Card>
+          <AssistDialog
+            open={pendingAssistFor !== null}
+            teamLabel={teamLabel(teams, pendingAssistFor?.teamId)}
+            players={
+              pendingAssistFor
+                ? onCourtPlayers(pendingAssistFor.teamId).filter((p) => p.id !== pendingAssistFor.scorerId)
+                : []
+            }
+            onPick={(assistId) => {
+              if (!pendingAssistFor) return
+              recordGoal(pendingAssistFor.teamId, pendingAssistFor.scorerId, assistId)
+              setPendingAssistFor(null)
+            }}
+            onSkip={() => {
+              if (!pendingAssistFor) return
+              recordGoal(pendingAssistFor.teamId, pendingAssistFor.scorerId, null)
+              setPendingAssistFor(null)
+            }}
+            onOpenChange={(next) => {
+              if (!next) setPendingAssistFor(null)
+            }}
+          />
+
+          <GoalActionsDialog
+            open={goalActionsFor !== null}
+            goal={goalActionsFor}
+            scorerName={
+              goalActionsFor
+                ? goalActionsFor.playerId
+                  ? allPlayersById.get(goalActionsFor.playerId)?.name ?? "?"
+                  : "NINGUÉM/CONTRA"
+                : ""
+            }
+            onOpenChange={(next) => {
+              if (!next) setGoalActionsFor(null)
+            }}
+            onRemove={() => {
+              if (!goalActionsFor) return
+              handleRemoveGoal(goalActionsFor)
+              setGoalActionsFor(null)
+            }}
+            onChangeScorer={() => {
+              if (!goalActionsFor) return
+              removeGoal(goalActionsFor.id)
+              setScoringForTeam(goalActionsFor.teamId)
+              setGoalActionsFor(null)
+            }}
+            onChangeAssist={() => {
+              if (!goalActionsFor || !goalActionsFor.playerId) return
+              removeGoal(goalActionsFor.id)
+              setPendingAssistFor({ teamId: goalActionsFor.teamId, scorerId: goalActionsFor.playerId })
+              setGoalActionsFor(null)
+            }}
+          />
+
+          {/* Secondary/admin actions live below, visually quieter, so a rushed
+              thumb reaching for "+1 gol" can't land on "Encerrar" by mistake. */}
+          <Button
+            size="touch"
+            variant="destructive"
+            className="w-full bg-destructive text-white hover:bg-destructive/90"
+            disabled={busy}
+            onClick={() => setEndRoundConfirmOpen(true)}
+          >
+            Encerrar jogo
+          </Button>
+
+          <ConfirmHoldDialog
+            open={endRoundConfirmOpen}
+            title="Encerrar o jogo?"
+            description="Isso encerra esse jogo e passa pro próximo da fila. Segure o botão abaixo para confirmar."
+            confirmLabel="Segure para encerrar"
+            holdMs={1500}
+            onOpenChange={setEndRoundConfirmOpen}
+            onConfirm={handleConfirmEndRound}
+          />
+
+          {canUndoLastRound && (
+            <button
+              type="button"
+              className="flex items-center justify-center gap-1.5 self-center text-xs text-muted-foreground underline"
+              disabled={busy}
+              onClick={() => setUndoRoundConfirmOpen(true)}
+            >
+              <Undo2 className="size-3.5" /> Voltar para o jogo anterior
+            </button>
+          )}
+
+          <ConfirmDialog
+            open={undoRoundConfirmOpen}
+            title="Voltar para o jogo anterior?"
+            description="Isso desfaz o encerramento do último jogo — o placar e a fila voltam a como estavam antes."
+            confirmLabel="Voltar para o jogo anterior"
+            onOpenChange={setUndoRoundConfirmOpen}
+            onConfirm={handleConfirmUndoRound}
+          />
+
+          <div className="flex flex-col gap-2">
+            <p className="text-sm font-medium text-muted-foreground">Fila de espera</p>
+            {queue.length === 0 && <p className="text-sm text-muted-foreground">Nenhum time esperando.</p>}
+            {queue.map((t, i) => (
+              <TeamRosterCard
+                key={t.id}
+                variant="collapsible"
+                color={t.color}
+                number={t.number}
+                captainId={t.captainId}
+                players={t.players}
+                headerRight={<span className="text-xs text-muted-foreground">{i + 1}º na fila</span>}
+              />
+            ))}
+          </div>
+
+          <button
+            type="button"
+            className="self-center text-xs text-muted-foreground underline"
+            disabled={busy}
+            onClick={() => setFinishConfirmOpen(true)}
+          >
+            Encerrar pelada
+          </button>
+
+          <ConfirmHoldDialog
+            open={finishConfirmOpen}
+            title="Encerrar a pelada?"
+            description="Isso encerra a pelada inteira, não só o jogo atual. Segure o botão abaixo para confirmar."
+            confirmLabel="Segure para encerrar"
+            onOpenChange={setFinishConfirmOpen}
+            onConfirm={handleConfirmFinishMatch}
+          />
         </>
       )}
     </div>

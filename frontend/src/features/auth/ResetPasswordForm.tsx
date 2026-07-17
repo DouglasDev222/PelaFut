@@ -26,7 +26,7 @@ export function ResetPasswordForm() {
   }
 
   return (
-    <Card className="w-full max-w-sm">
+    <Card className="w-full border-none shadow-none sm:border sm:shadow-sm">
       <CardHeader>
         <CardTitle>Definir nova senha</CardTitle>
       </CardHeader>
@@ -37,6 +37,7 @@ export function ResetPasswordForm() {
             <Input
               id="password"
               type="password"
+              autoComplete="new-password"
               required
               minLength={6}
               value={password}
@@ -44,7 +45,7 @@ export function ResetPasswordForm() {
             />
           </div>
           {error && <p className="text-sm text-destructive">{error}</p>}
-          <Button type="submit" disabled={submitting}>
+          <Button type="submit" size="touch" className="w-full" disabled={submitting}>
             {submitting ? "Salvando..." : "Salvar nova senha"}
           </Button>
         </form>

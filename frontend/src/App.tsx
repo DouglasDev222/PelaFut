@@ -1,6 +1,10 @@
-import { BrowserRouter, Routes, Route, Link } from "react-router-dom"
+import { useState } from "react"
+import { BrowserRouter, Routes, Route, Link, useParams, useNavigate } from "react-router-dom"
+import { CalendarDays, History, User, UserPlus, Users } from "lucide-react"
 import { AuthProvider } from "@/features/auth/AuthProvider"
 import { ProtectedRoute } from "@/features/auth/ProtectedRoute"
+import { AppShell } from "@/components/layout/AppShell"
+import { ToastProvider } from "@/components/ui/toast"
 import { LoginForm } from "@/features/auth/LoginForm"
 import { SignupForm } from "@/features/auth/SignupForm"
 import { ForgotPasswordForm } from "@/features/auth/ForgotPasswordForm"
@@ -11,31 +15,119 @@ import { PlayerFormPage } from "@/features/players/PlayerFormPage"
 import { MatchListPage } from "@/features/matches/MatchListPage"
 import { MatchFormPage } from "@/features/matches/MatchFormPage"
 import { ParticipantSelectorPage } from "@/features/matches/ParticipantSelectorPage"
-import { TeamFormationPage } from "@/features/teams/TeamFormationPage"
+import { TeamFormationPage, type TeamFormationBackContext } from "@/features/teams/TeamFormationPage"
 import { LiveMatchPage } from "@/features/live/LiveMatchPage"
-
-function CenteredPage({ children }: { children: React.ReactNode }) {
-  return <div className="flex min-h-svh items-center justify-center p-4">{children}</div>
-}
+import { MatchStatsPage } from "@/features/stats/MatchStatsPage"
+import { PlayerStatsPage } from "@/features/stats/PlayerStatsPage"
 
 function HomePage() {
+  const shortcuts = [
+    { to: "/matches", label: "Peladas", Icon: CalendarDays },
+    { to: "/players", label: "Peladeiros", Icon: Users },
+    { to: "/profile", label: "Perfil", Icon: User },
+  ]
   return (
-    <CenteredPage>
-      <div className="flex flex-col items-center gap-4">
-        <h1 className="text-2xl font-semibold">PelaFut</h1>
-        <p className="text-muted-foreground">Você está logado.</p>
-        <div className="flex gap-4 text-sm underline">
-          <Link to="/players">Peladeiros</Link>
-          <Link to="/matches">Peladas</Link>
-          <Link to="/profile">Meu perfil</Link>
-        </div>
+    <div className="flex flex-col gap-4">
+      <p className="text-sm text-muted-foreground">Bem-vindo de volta.</p>
+      <Link
+        to="/matches/new"
+        className="flex items-center justify-center rounded-xl bg-primary px-4 py-4 text-base font-medium text-primary-foreground"
+      >
+        + Nova pelada
+      </Link>
+      <div className="grid grid-cols-3 gap-3">
+        {shortcuts.map(({ to, label, Icon }) => (
+          <Link
+            key={to}
+            to={to}
+            className="flex flex-col items-center gap-1.5 rounded-xl border p-4 text-xs text-muted-foreground hover:bg-muted"
+          >
+            <Icon className="size-6" />
+            {label}
+          </Link>
+        ))}
       </div>
-    </CenteredPage>
+    </div>
+  )
+}
+
+function ParticipantSelectorRoute() {
+  const [actions, setActions] = useState<{ addPlayer: () => void }>({ addPlayer: () => {} })
+  return (
+    <AppShell
+      title="Participantes"
+      headerActions={
+        <button
+          type="button"
+          onClick={() => actions.addPlayer()}
+          aria-label="Cadastrar novo peladeiro"
+          className="flex size-11 shrink-0 items-center justify-center rounded-full text-foreground hover:bg-muted"
+        >
+          <UserPlus className="size-5" />
+        </button>
+      }
+    >
+      <ParticipantSelectorPage onReady={setActions} />
+    </AppShell>
+  )
+}
+
+function TeamFormationRoute() {
+  const { id } = useParams<{ id: string }>()
+  const navigate = useNavigate()
+  const [backContext, setBackContext] = useState<TeamFormationBackContext>({
+    hasInFlowBack: false,
+    goBack: () => {},
+  })
+
+  return (
+    <AppShell
+      title="Formação dos times"
+      onBack={() => {
+        if (backContext.hasInFlowBack) {
+          backContext.goBack()
+          return
+        }
+        navigate("/matches")
+      }}
+      headerActions={
+        <Link
+          to={`/matches/${id}/participants`}
+          aria-label="Ver peladeiros e escolher quem está jogando"
+          className="flex size-11 shrink-0 items-center justify-center rounded-full text-foreground hover:bg-muted"
+        >
+          <Users className="size-5" />
+        </Link>
+      }
+    >
+      <TeamFormationPage onBackContextChange={setBackContext} />
+    </AppShell>
+  )
+}
+
+function LiveMatchRoute() {
+  const { id } = useParams<{ id: string }>()
+  return (
+    <AppShell
+      title="Partida ao vivo"
+      headerActions={
+        <Link
+          to={`/matches/${id}/stats`}
+          aria-label="Ver histórico de jogos dessa pelada"
+          className="flex size-11 shrink-0 items-center justify-center rounded-full text-foreground hover:bg-muted"
+        >
+          <History className="size-5" />
+        </Link>
+      }
+    >
+      <LiveMatchPage />
+    </AppShell>
   )
 }
 
 function App() {
   return (
+    <ToastProvider>
     <AuthProvider>
       <BrowserRouter>
         <Routes>
@@ -43,7 +135,9 @@ function App() {
             path="/"
             element={
               <ProtectedRoute>
-                <HomePage />
+                <AppShell title="PelaFut">
+                  <HomePage />
+                </AppShell>
               </ProtectedRoute>
             }
           />
@@ -51,9 +145,9 @@ function App() {
             path="/profile"
             element={
               <ProtectedRoute>
-                <CenteredPage>
+                <AppShell title="Perfil">
                   <ProfilePage />
-                </CenteredPage>
+                </AppShell>
               </ProtectedRoute>
             }
           />
@@ -61,9 +155,9 @@ function App() {
             path="/players"
             element={
               <ProtectedRoute>
-                <CenteredPage>
+                <AppShell title="Peladeiros">
                   <PlayerListPage />
-                </CenteredPage>
+                </AppShell>
               </ProtectedRoute>
             }
           />
@@ -71,9 +165,9 @@ function App() {
             path="/players/new"
             element={
               <ProtectedRoute>
-                <CenteredPage>
+                <AppShell title="Novo peladeiro">
                   <PlayerFormPage />
-                </CenteredPage>
+                </AppShell>
               </ProtectedRoute>
             }
           />
@@ -81,9 +175,9 @@ function App() {
             path="/players/:id/edit"
             element={
               <ProtectedRoute>
-                <CenteredPage>
+                <AppShell title="Editar peladeiro">
                   <PlayerFormPage />
-                </CenteredPage>
+                </AppShell>
               </ProtectedRoute>
             }
           />
@@ -91,9 +185,9 @@ function App() {
             path="/matches"
             element={
               <ProtectedRoute>
-                <CenteredPage>
+                <AppShell title="Peladas">
                   <MatchListPage />
-                </CenteredPage>
+                </AppShell>
               </ProtectedRoute>
             }
           />
@@ -101,9 +195,9 @@ function App() {
             path="/matches/new"
             element={
               <ProtectedRoute>
-                <CenteredPage>
+                <AppShell title="Nova pelada">
                   <MatchFormPage />
-                </CenteredPage>
+                </AppShell>
               </ProtectedRoute>
             }
           />
@@ -111,9 +205,9 @@ function App() {
             path="/matches/:id/edit"
             element={
               <ProtectedRoute>
-                <CenteredPage>
+                <AppShell title="Editar pelada">
                   <MatchFormPage />
-                </CenteredPage>
+                </AppShell>
               </ProtectedRoute>
             }
           />
@@ -121,9 +215,7 @@ function App() {
             path="/matches/:id/participants"
             element={
               <ProtectedRoute>
-                <CenteredPage>
-                  <ParticipantSelectorPage />
-                </CenteredPage>
+                <ParticipantSelectorRoute />
               </ProtectedRoute>
             }
           />
@@ -131,9 +223,7 @@ function App() {
             path="/matches/:id/teams"
             element={
               <ProtectedRoute>
-                <CenteredPage>
-                  <TeamFormationPage />
-                </CenteredPage>
+                <TeamFormationRoute />
               </ProtectedRoute>
             }
           />
@@ -141,25 +231,44 @@ function App() {
             path="/matches/:id/live"
             element={
               <ProtectedRoute>
-                <CenteredPage>
-                  <LiveMatchPage />
-                </CenteredPage>
+                <LiveMatchRoute />
               </ProtectedRoute>
             }
           />
-          <Route path="/login" element={<CenteredPage><LoginForm /></CenteredPage>} />
-          <Route path="/signup" element={<CenteredPage><SignupForm /></CenteredPage>} />
+          <Route
+            path="/matches/:id/stats"
+            element={
+              <ProtectedRoute>
+                <AppShell title="Estatísticas">
+                  <MatchStatsPage />
+                </AppShell>
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/players/:id/stats"
+            element={
+              <ProtectedRoute>
+                <AppShell title="Estatísticas">
+                  <PlayerStatsPage />
+                </AppShell>
+              </ProtectedRoute>
+            }
+          />
+          <Route path="/login" element={<AppShell title="Entrar"><LoginForm /></AppShell>} />
+          <Route path="/signup" element={<AppShell title="Criar conta"><SignupForm /></AppShell>} />
           <Route
             path="/forgot-password"
-            element={<CenteredPage><ForgotPasswordForm /></CenteredPage>}
+            element={<AppShell title="Recuperar senha"><ForgotPasswordForm /></AppShell>}
           />
           <Route
             path="/reset-password"
-            element={<CenteredPage><ResetPasswordForm /></CenteredPage>}
+            element={<AppShell title="Nova senha"><ResetPasswordForm /></AppShell>}
           />
         </Routes>
       </BrowserRouter>
     </AuthProvider>
+    </ToastProvider>
   )
 }
 

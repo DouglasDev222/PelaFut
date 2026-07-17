@@ -65,15 +65,35 @@ function splitPlan(totalParticipants: number, playersPerTeam: number) {
   return { numActiveTeams: fullTeams, remainder }
 }
 
-function nextActiveTeamIndex(
+/**
+ * How many players each team drafts during the active turn rotation. Full
+ * teams always draft up to `playersPerTeam`. A reserve team (the last team,
+ * short of a full squad) drafts up to its `remainder` capacity only when
+ * `reserveDrafts` is on — otherwise it drafts 0: it takes no active turn and
+ * is filled automatically with whoever is left over.
+ */
+function draftCapacityFor(
+  teamIndex: number,
+  numTeams: number,
+  numActiveTeams: number,
+  playersPerTeam: number,
+  remainder: number,
+  reserveDrafts: boolean
+): number {
+  const isReserveTeam = numTeams > numActiveTeams && teamIndex === numTeams - 1
+  if (isReserveTeam) return reserveDrafts ? remainder : 0
+  return playersPerTeam
+}
+
+function nextTeamIndex(
   currentTeams: FormationTeam[],
   fromIndex: number,
-  numActiveTeams: number,
-  playersPerTeam: number
+  capacityFor: (teamIndex: number) => number
 ): number {
-  for (let step = 1; step <= numActiveTeams; step++) {
-    const idx = (fromIndex + step) % numActiveTeams
-    if (currentTeams[idx].players.length < playersPerTeam) return idx
+  const n = currentTeams.length
+  for (let step = 1; step <= n; step++) {
+    const idx = (fromIndex + step) % n
+    if (currentTeams[idx].players.length < capacityFor(idx)) return idx
   }
   return fromIndex
 }
@@ -88,6 +108,13 @@ export function useTeamFormation(matchId: string) {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
+  // Once true, stays true for this hook's lifetime — lets the caller tell a
+  // genuine first-time setup apart from a "redo" that has a saved board to
+  // cancel back to (see resetDraft/"Refazer times").
+  const [hasSavedTeams, setHasSavedTeams] = useState(false)
+  // When on, a reserve team drafts its own players (and captain) in turn
+  // order instead of being auto-filled with leftovers. Set on the setup card.
+  const [reserveDraftsActively, setReserveDraftsActively] = useState(false)
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -141,6 +168,7 @@ export function useTeamFormation(matchId: string) {
       )
       setAvailablePlayers([])
       setPhase("done")
+      setHasSavedTeams(true)
       setLoading(false)
       return
     }
@@ -194,10 +222,12 @@ export function useTeamFormation(matchId: string) {
       const remaining = prev.filter((p) => p.id !== playerId)
       const { numActiveTeams, remainder } = splitPlan(participants.length, playersPerTeam)
       const hasReserveTeam = updatedTeams.length > numActiveTeams
+      const capacityFor = (i: number) =>
+        draftCapacityFor(i, updatedTeams.length, numActiveTeams, playersPerTeam, remainder, reserveDraftsActively)
 
-      if (hasReserveTeam && remainder > 0 && remaining.length === remainder) {
-        // Every active team is now full. Whoever is left over goes straight
-        // into the reserve team — they never get an active turn to "pick".
+      if (hasReserveTeam && !reserveDraftsActively && remainder > 0 && remaining.length === remainder) {
+        // Passive reserve: once every active team is full, whoever is left
+        // over goes straight into it — no active turn to "pick".
         setTeams((prevTeams) => {
           const reserveIndex = prevTeams.length - 1
           const reserveTeam = prevTeams[reserveIndex]
@@ -223,9 +253,7 @@ export function useTeamFormation(matchId: string) {
       if (remaining.length === 0) {
         setPhase("done")
       } else {
-        setCurrentTeamIndex(
-          nextActiveTeamIndex(updatedTeams, currentTeamIndex, numActiveTeams, playersPerTeam)
-        )
+        setCurrentTeamIndex(nextTeamIndex(updatedTeams, currentTeamIndex, capacityFor))
       }
       return remaining
     })
@@ -253,6 +281,23 @@ export function useTeamFormation(matchId: string) {
     )
   }
 
+  /**
+   * Steps back from the draft to the setup screen — unlike `resetDraft`
+   * ("Refazer times", an explicit full restart), this keeps each team's
+   * chosen color and only clears the in-progress picks, since it's meant
+   * for "let me reconsider before picking further", not a do-over.
+   *
+   * Memoized: a caller (TeamFormationPage) depends on this in a `useEffect`
+   * dependency array — a plain function re-created every render would make
+   * that effect re-fire every render, an infinite update loop.
+   */
+  const backToSetup = useCallback(() => {
+    setTeams((prev) => prev.map((t) => ({ ...t, players: [], captainId: null })))
+    setAvailablePlayers(participants)
+    setCurrentTeamIndex(0)
+    setPhase("setup")
+  }, [participants])
+
   function resetDraft() {
     const numTeams =
       participants.length > 0 && playersPerTeam > 0
@@ -261,7 +306,32 @@ export function useTeamFormation(matchId: string) {
     setTeams(emptyTeams(numTeams))
     setAvailablePlayers(participants)
     setCurrentTeamIndex(0)
+    setReserveDraftsActively(false)
     setPhase("setup")
+  }
+
+  /**
+   * Changes the players-per-team setting mid-flow and re-forms from a fresh
+   * setup with the recomputed team count. Only offered in the setup phase, so
+   * there are never drafted picks to lose here.
+   */
+  async function changePlayersPerTeam(n: number): Promise<{ error: string | null }> {
+    const { error: updateError } = await supabase
+      .from("matches")
+      .update({ players_per_team: n })
+      .eq("id", matchId)
+    if (updateError) {
+      setError(updateError.message)
+      return { error: updateError.message }
+    }
+    setPlayersPerTeam(n)
+    const numTeams = participants.length > 0 && n > 0 ? Math.ceil(participants.length / n) : 0
+    setTeams(emptyTeams(numTeams))
+    setAvailablePlayers(participants)
+    setCurrentTeamIndex(0)
+    setReserveDraftsActively(false)
+    setPhase("setup")
+    return { error: null }
   }
 
   async function save() {
@@ -329,11 +399,16 @@ export function useTeamFormation(matchId: string) {
     loading,
     saving,
     error,
+    hasSavedTeams,
+    reserveDraftsActively,
+    setReserveDraftsActively,
+    changePlayersPerTeam,
     setTeamColor,
     startDraft,
     pickPlayer,
     movePlayer,
     setCaptain,
+    backToSetup,
     resetDraft,
     save,
     reload: load,

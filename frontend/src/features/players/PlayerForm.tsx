@@ -1,9 +1,10 @@
-import { useState, type FormEvent } from "react"
+import { useRef, useState, type FormEvent } from "react"
 import { useNavigate } from "react-router-dom"
 import type { Player, PlayerInput, PlayerPosition } from "@pelafut/shared"
 import { useAuth } from "@/features/auth/AuthProvider"
 import { supabase } from "@/lib/supabaseClient"
 import { StarRating } from "@/features/players/StarRating"
+import { PlayerAvatar } from "@/components/PlayerAvatar"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -21,9 +22,12 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 interface PlayerFormProps {
   initial?: Player
   onSubmit: (input: PlayerInput) => Promise<{ error: string | null }>
+  /** Where to go after saving. Defaults to the players list; set to return to
+   * the pelada flow (e.g. participant selection) when reached as a shortcut. */
+  returnTo?: string
 }
 
-export function PlayerForm({ initial, onSubmit }: PlayerFormProps) {
+export function PlayerForm({ initial, onSubmit, returnTo }: PlayerFormProps) {
   const { user } = useAuth()
   const navigate = useNavigate()
 
@@ -42,6 +46,7 @@ export function PlayerForm({ initial, onSubmit }: PlayerFormProps) {
   const [uploading, setUploading] = useState(false)
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const photoInputRef = useRef<HTMLInputElement>(null)
 
   async function handlePhotoChange(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0]
@@ -62,13 +67,18 @@ export function PlayerForm({ initial, onSubmit }: PlayerFormProps) {
     setUploading(false)
   }
 
+  function handleRemovePhoto() {
+    setPhotoUrl("")
+    if (photoInputRef.current) photoInputRef.current.value = ""
+  }
+
   async function handleSubmit(e: FormEvent) {
     e.preventDefault()
     setError(null)
     setSubmitting(true)
     const { error } = await onSubmit({
-      name,
-      nickname: nickname || null,
+      name: name.toUpperCase(),
+      nickname: nickname ? nickname.toUpperCase() : null,
       photo_url: photoUrl || null,
       active,
       birth_date: birthDate || null,
@@ -82,46 +92,75 @@ export function PlayerForm({ initial, onSubmit }: PlayerFormProps) {
       setError(error)
       return
     }
-    navigate("/players")
+    // Replace so the just-submitted form isn't left in the back history when
+    // returning to the pelada flow.
+    if (returnTo) navigate(returnTo, { replace: true })
+    else navigate("/players")
   }
 
   return (
-    <Card className="w-full max-w-lg">
-      <CardHeader>
-        <CardTitle>{initial ? "Editar peladeiro" : "Novo peladeiro"}</CardTitle>
-      </CardHeader>
-      <CardContent>
-        <form className="flex flex-col gap-4" onSubmit={handleSubmit}>
-          <div className="flex items-center gap-4">
-            {photoUrl ? (
-              <img
-                src={photoUrl}
-                alt={name}
-                className="size-16 rounded-full object-cover"
-              />
-            ) : (
-              <div className="size-16 rounded-full bg-muted" />
-            )}
-            <div className="flex flex-col gap-1">
-              <Label htmlFor="photo">Foto</Label>
-              <Input
-                id="photo"
-                type="file"
-                accept="image/*"
-                onChange={handlePhotoChange}
+    <div className="flex w-full flex-col gap-4 pb-4">
+      <Card className="w-full border-none shadow-none sm:border sm:shadow-sm">
+        <CardHeader>
+          <CardTitle>{initial ? "Editar peladeiro" : "Novo peladeiro"}</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <form id="player-form" className="flex flex-col gap-4" onSubmit={handleSubmit}>
+          <div className="flex flex-col items-center gap-3">
+            <PlayerAvatar photoUrl={photoUrl} name={name} size="size-24" iconSize="size-10" />
+            <div className="flex items-center gap-2">
+              <Button
+                type="button"
+                variant="outline"
+                size="touch"
+                onClick={() => photoInputRef.current?.click()}
                 disabled={uploading}
-              />
+              >
+                {uploading ? "Enviando..." : photoUrl ? "Trocar foto" : "Adicionar foto"}
+              </Button>
+              {photoUrl && (
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="touch"
+                  className="text-destructive hover:text-destructive"
+                  onClick={handleRemovePhoto}
+                  disabled={uploading}
+                >
+                  Remover
+                </Button>
+              )}
             </div>
+            <input
+              ref={photoInputRef}
+              id="photo"
+              type="file"
+              accept="image/*"
+              className="hidden"
+              onChange={handlePhotoChange}
+              disabled={uploading}
+            />
           </div>
 
           <div className="flex flex-col gap-2">
             <Label htmlFor="name">Nome</Label>
-            <Input id="name" required value={name} onChange={(e) => setName(e.target.value)} />
+            <Input
+              id="name"
+              required
+              className="uppercase"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+            />
           </div>
 
           <div className="flex flex-col gap-2">
             <Label htmlFor="nickname">Apelido</Label>
-            <Input id="nickname" value={nickname} onChange={(e) => setNickname(e.target.value)} />
+            <Input
+              id="nickname"
+              className="uppercase"
+              value={nickname}
+              onChange={(e) => setNickname(e.target.value)}
+            />
           </div>
 
           <div className="grid grid-cols-2 gap-4">
@@ -175,13 +214,17 @@ export function PlayerForm({ initial, onSubmit }: PlayerFormProps) {
             <Textarea id="notes" value={notes} onChange={(e) => setNotes(e.target.value)} />
           </div>
 
-          {error && <p className="text-sm text-destructive">{error}</p>}
+          </form>
+        </CardContent>
+      </Card>
 
-          <Button type="submit" disabled={submitting || uploading}>
-            {submitting ? "Salvando..." : "Salvar"}
-          </Button>
-        </form>
-      </CardContent>
-    </Card>
+      {error && <p className="text-sm text-destructive">{error}</p>}
+
+      <div className="sticky bottom-0 -mx-4 border-t bg-background/95 p-4 backdrop-blur">
+        <Button form="player-form" type="submit" size="touch" className="w-full" disabled={submitting || uploading}>
+          {submitting ? "Salvando..." : "Salvar"}
+        </Button>
+      </div>
+    </div>
   )
 }

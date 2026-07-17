@@ -6,7 +6,7 @@ import { MatchForm } from "@/features/matches/MatchForm"
 
 export function MatchFormPage() {
   const { id } = useParams<{ id: string }>()
-  const { createMatch, updateMatch } = useMatches()
+  const { createMatch, updateMatch, clearMatchData } = useMatches()
   const [match, setMatch] = useState<Match | null>(null)
   const [loading, setLoading] = useState(Boolean(id))
 
@@ -28,6 +28,7 @@ export function MatchFormPage() {
         const { error } = await createMatch(input)
         return { error }
       }}
+      onClearData={id ? () => clearMatchData(id) : undefined}
     />
   )
 }

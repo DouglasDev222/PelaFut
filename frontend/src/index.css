@@ -3,47 +3,43 @@
 
 @custom-variant dark (&:is(.dark *));
 
+/*
+ * Dark is the default and only theme right now — this app is used live, at
+ * the field, often in daylight glare, and a confident dark surface with one
+ * strong accent reads better there than a light admin-tool background.
+ * Tokens still follow the shadcn naming convention so every existing
+ * component (button/input/select/card/dialog) picks them up unchanged.
+ */
 :root {
   --radius: 0.625rem;
-  --background: oklch(1 0 0);
-  --foreground: oklch(0.145 0 0);
-  --card: oklch(1 0 0);
-  --card-foreground: oklch(0.145 0 0);
-  --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.145 0 0);
-  --primary: oklch(0.205 0 0);
-  --primary-foreground: oklch(0.985 0 0);
-  --secondary: oklch(0.97 0 0);
-  --secondary-foreground: oklch(0.205 0 0);
-  --muted: oklch(0.97 0 0);
-  --muted-foreground: oklch(0.556 0 0);
-  --accent: oklch(0.97 0 0);
-  --accent-foreground: oklch(0.205 0 0);
-  --destructive: oklch(0.577 0.245 27.325);
-  --border: oklch(0.922 0 0);
-  --input: oklch(0.922 0 0);
-  --ring: oklch(0.708 0 0);
+  --background: #0b0e11;
+  --foreground: #f2f4f6;
+  --card: #161a1f;
+  --card-foreground: #f2f4f6;
+  --popover: #1b2027;
+  --popover-foreground: #f2f4f6;
+  --primary: #3dd6c4;
+  --primary-foreground: #06201c;
+  --secondary: #20262d;
+  --secondary-foreground: #f2f4f6;
+  --muted: #1b2027;
+  --muted-foreground: #8b94a0;
+  --accent: #232b33;
+  --accent-foreground: #f2f4f6;
+  --destructive: #e5484d;
+  --success: #3fbf6b;
+  --warning: #e8a93a;
+  --border: #262d35;
+  --input: #262d35;
+  --ring: #3dd6c4;
+  --chart-series-1: #3dd6c4;
 }
 
-.dark {
-  --background: oklch(0.145 0 0);
-  --foreground: oklch(0.985 0 0);
-  --card: oklch(0.205 0 0);
-  --card-foreground: oklch(0.985 0 0);
-  --popover: oklch(0.205 0 0);
-  --popover-foreground: oklch(0.985 0 0);
-  --primary: oklch(0.922 0 0);
-  --primary-foreground: oklch(0.205 0 0);
-  --secondary: oklch(0.269 0 0);
-  --secondary-foreground: oklch(0.985 0 0);
-  --muted: oklch(0.269 0 0);
-  --muted-foreground: oklch(0.708 0 0);
-  --accent: oklch(0.269 0 0);
-  --accent-foreground: oklch(0.985 0 0);
-  --destructive: oklch(0.704 0.191 22.216);
-  --border: oklch(1 0 0 / 10%);
-  --input: oklch(1 0 0 / 15%);
-  --ring: oklch(0.556 0 0);
+@theme {
+  /* Signature treatment for the live scoreboard/clock — nothing else on the
+     app uses this size, so it never competes with it for attention. */
+  --text-display: 4.5rem;
+  --text-display--line-height: 1;
 }
 
 @theme inline {
@@ -66,6 +62,8 @@
   --color-accent: var(--accent);
   --color-accent-foreground: var(--accent-foreground);
   --color-destructive: var(--destructive);
+  --color-success: var(--success);
+  --color-warning: var(--warning);
   --color-border: var(--border);
   --color-input: var(--input);
   --color-ring: var(--ring);
@@ -79,5 +77,16 @@
     @apply bg-background text-foreground;
     margin: 0;
     min-height: 100svh;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
   }
 }

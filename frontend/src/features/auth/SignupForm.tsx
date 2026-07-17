@@ -32,7 +32,7 @@ export function SignupForm() {
   }
 
   return (
-    <Card className="w-full max-w-sm">
+    <Card className="w-full border-none shadow-none sm:border sm:shadow-sm">
       <CardHeader>
         <CardTitle>Criar conta</CardTitle>
       </CardHeader>
@@ -42,6 +42,7 @@ export function SignupForm() {
             <Label htmlFor="fullName">Nome</Label>
             <Input
               id="fullName"
+              autoComplete="name"
               required
               value={fullName}
               onChange={(e) => setFullName(e.target.value)}
@@ -52,6 +53,8 @@ export function SignupForm() {
             <Input
               id="email"
               type="email"
+              inputMode="email"
+              autoComplete="email"
               required
               value={email}
               onChange={(e) => setEmail(e.target.value)}
@@ -62,6 +65,7 @@ export function SignupForm() {
             <Input
               id="password"
               type="password"
+              autoComplete="new-password"
               required
               minLength={6}
               value={password}
@@ -70,7 +74,7 @@ export function SignupForm() {
           </div>
           {error && <p className="text-sm text-destructive">{error}</p>}
           {info && <p className="text-sm text-muted-foreground">{info}</p>}
-          <Button type="submit" disabled={submitting}>
+          <Button type="submit" size="touch" className="w-full" disabled={submitting}>
             {submitting ? "Criando..." : "Criar conta"}
           </Button>
           <div className="text-sm text-muted-foreground">

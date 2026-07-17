@@ -27,7 +27,7 @@ export function ForgotPasswordForm() {
   }
 
   return (
-    <Card className="w-full max-w-sm">
+    <Card className="w-full border-none shadow-none sm:border sm:shadow-sm">
       <CardHeader>
         <CardTitle>Recuperar senha</CardTitle>
       </CardHeader>
@@ -43,13 +43,15 @@ export function ForgotPasswordForm() {
               <Input
                 id="email"
                 type="email"
+                inputMode="email"
+                autoComplete="email"
                 required
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
               />
             </div>
             {error && <p className="text-sm text-destructive">{error}</p>}
-            <Button type="submit" disabled={submitting}>
+            <Button type="submit" size="touch" className="w-full" disabled={submitting}>
               {submitting ? "Enviando..." : "Enviar link"}
             </Button>
           </form>

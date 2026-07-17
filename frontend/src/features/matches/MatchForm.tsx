@@ -7,14 +7,19 @@ import { Label } from "@/components/ui/label"
 import { Switch } from "@/components/ui/switch"
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { ConfirmDialog } from "@/components/ui/confirm-dialog"
+import { toastManager } from "@/components/ui/toast"
 
 interface MatchFormProps {
   initial?: Match
   onSubmit: (input: MatchInput) => Promise<{ error: string | null }>
+  onClearData?: () => Promise<{ error: string | null }>
 }
 
-export function MatchForm({ initial, onSubmit }: MatchFormProps) {
+export function MatchForm({ initial, onSubmit, onClearData }: MatchFormProps) {
   const navigate = useNavigate()
+  const [clearConfirmOpen, setClearConfirmOpen] = useState(false)
+  const [dataCleared, setDataCleared] = useState(false)
 
   const [name, setName] = useState(initial?.name ?? "")
   const [location, setLocation] = useState(initial?.location ?? "")
@@ -63,13 +68,28 @@ export function MatchForm({ initial, onSubmit }: MatchFormProps) {
     navigate("/matches")
   }
 
+  async function handleClearData() {
+    if (!onClearData) return
+    const { error } = await onClearData()
+    setClearConfirmOpen(false)
+    if (error) {
+      toastManager.add({ title: "Erro ao limpar dados", description: error, type: "error" })
+      return
+    }
+    setDataCleared(true)
+    toastManager.add({ title: "Dados da pelada limpos", description: "Jogos, gols e assistências foram apagados." })
+  }
+
+  const showDangerZone = onClearData && (initial?.status === "in_progress" || initial?.status === "finished")
+
   return (
-    <Card className="w-full max-w-lg">
+    <div className="flex w-full flex-col gap-4 pb-4">
+      <Card className="w-full border-none shadow-none sm:border sm:shadow-sm">
       <CardHeader>
         <CardTitle>{initial ? "Editar pelada" : "Nova pelada"}</CardTitle>
       </CardHeader>
       <CardContent>
-        <form className="flex flex-col gap-4" onSubmit={handleSubmit}>
+        <form id="match-form" className="flex flex-col gap-4" onSubmit={handleSubmit}>
           <div className="flex flex-col gap-2">
             <Label htmlFor="name">Nome</Label>
             <Input id="name" required value={name} onChange={(e) => setName(e.target.value)} />
@@ -193,13 +213,49 @@ export function MatchForm({ initial, onSubmit }: MatchFormProps) {
             />
           </div>
 
-          {error && <p className="text-sm text-destructive">{error}</p>}
-
-          <Button type="submit" disabled={submitting}>
-            {submitting ? "Salvando..." : "Salvar"}
-          </Button>
-        </form>
+          </form>
       </CardContent>
     </Card>
+
+      {error && <p className="text-sm text-destructive">{error}</p>}
+
+      {showDangerZone && (
+        <Card className="border-destructive/40">
+          <CardHeader>
+            <CardTitle className="text-base text-destructive">Zona de risco</CardTitle>
+          </CardHeader>
+          <CardContent className="flex flex-col gap-3">
+            <p className="text-sm text-muted-foreground">
+              Apaga o histórico de jogos, gols e assistências dessa pelada — os times e jogadores continuam
+              cadastrados, prontos para recomeçar do zero.
+            </p>
+            <Button
+              variant="destructive"
+              size="touch"
+              onClick={() => setClearConfirmOpen(true)}
+              disabled={dataCleared}
+            >
+              {dataCleared ? "Dados limpos ✓" : "Limpar dados da pelada"}
+            </Button>
+          </CardContent>
+        </Card>
+      )}
+
+      <ConfirmDialog
+        open={clearConfirmOpen}
+        title="Limpar dados da pelada?"
+        description="Isso apaga todos os jogos, gols e assistências registrados. Times e jogadores continuam cadastrados. Essa ação não pode ser desfeita."
+        confirmLabel="Limpar dados"
+        confirmVariant="destructive"
+        onOpenChange={setClearConfirmOpen}
+        onConfirm={handleClearData}
+      />
+
+      <div className="sticky bottom-0 -mx-4 border-t bg-background/95 p-4 backdrop-blur">
+        <Button form="match-form" type="submit" size="touch" className="w-full" disabled={submitting}>
+          {submitting ? "Salvando..." : "Salvar"}
+        </Button>
+      </div>
+    </div>
   )
 }

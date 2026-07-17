@@ -54,7 +54,7 @@ export function ProfilePage() {
   if (loading) return null
 
   return (
-    <Card className="w-full max-w-sm">
+    <Card className="w-full border-none shadow-none sm:border sm:shadow-sm">
       <CardHeader>
         <CardTitle>Meu perfil</CardTitle>
       </CardHeader>
@@ -62,11 +62,13 @@ export function ProfilePage() {
         <form className="flex flex-col gap-4" onSubmit={handleSubmit}>
           <div className="flex flex-col gap-2">
             <Label>E-mail</Label>
-            <p className="text-sm text-muted-foreground">{user?.email}</p>
+            <p className="rounded-md border bg-muted px-3 py-2 text-sm text-muted-foreground">
+              {user?.email}
+            </p>
           </div>
           <div className="flex flex-col gap-2">
             <Label htmlFor="fullName">Nome</Label>
-            <Input id="fullName" value={fullName} onChange={(e) => setFullName(e.target.value)} />
+            <Input id="fullName" autoComplete="name" value={fullName} onChange={(e) => setFullName(e.target.value)} />
           </div>
           <div className="flex flex-col gap-2">
             <Label htmlFor="avatarUrl">URL da foto</Label>
@@ -74,10 +76,16 @@ export function ProfilePage() {
           </div>
           {error && <p className="text-sm text-destructive">{error}</p>}
           {saved && <p className="text-sm text-muted-foreground">Perfil atualizado.</p>}
-          <Button type="submit" disabled={saving}>
+          <Button type="submit" size="touch" className="w-full" disabled={saving}>
             {saving ? "Salvando..." : "Salvar"}
           </Button>
-          <Button type="button" variant="outline" onClick={() => signOut()}>
+          <Button
+            type="button"
+            variant="destructive"
+            size="touch"
+            className="mt-4 w-full"
+            onClick={() => signOut()}
+          >
             Sair
           </Button>
         </form>

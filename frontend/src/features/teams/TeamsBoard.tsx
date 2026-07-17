@@ -1,5 +1,14 @@
-import { DndContext, useDraggable, useDroppable, type DragEndEvent } from "@dnd-kit/core"
-import { Star } from "lucide-react"
+import { useState } from "react"
+import {
+  DndContext,
+  PointerSensor,
+  useDraggable,
+  useDroppable,
+  useSensor,
+  useSensors,
+  type DragEndEvent,
+} from "@dnd-kit/core"
+import { GripVertical, Star } from "lucide-react"
 import type { Player } from "@pelafut/shared"
 import { captainFirst, type FormationTeam } from "@/features/teams/useTeamFormation"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -9,12 +18,16 @@ function PlayerChip({
   player,
   teamIndex,
   isCaptain,
+  isSelected,
   onSetCaptain,
+  onToggleSelect,
 }: {
   player: Player
   teamIndex: number
   isCaptain: boolean
+  isSelected: boolean
   onSetCaptain: () => void
+  onToggleSelect: () => void
 }) {
   const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({
     id: `${teamIndex}:${player.id}`,
@@ -29,22 +42,35 @@ function PlayerChip({
           : undefined
       }
       className={cn(
-        "flex items-center gap-1.5 rounded-md border bg-card px-3 py-1.5 text-sm select-none",
-        isDragging && "opacity-50"
+        "flex items-center gap-1.5 rounded-md border bg-card py-1.5 pr-3 pl-1.5 text-sm select-none",
+        isDragging && "opacity-50",
+        isSelected && "ring-2 ring-primary"
       )}
     >
       <button
         type="button"
         aria-label="Tornar capitão"
         onClick={onSetCaptain}
-        className="shrink-0"
+        className="flex size-8 shrink-0 items-center justify-center"
       >
         <Star className={cn("size-4", isCaptain ? "fill-primary text-primary" : "text-muted-foreground")} />
       </button>
-      <span {...listeners} {...attributes} className="cursor-grab active:cursor-grabbing">
+      <button
+        type="button"
+        onClick={onToggleSelect}
+        className="min-h-8 flex-1 text-left uppercase"
+      >
         {player.name}
         {player.nickname ? ` (${player.nickname})` : ""}
         {player.position === "goleiro" ? " 🧤" : ""}
+      </button>
+      <span
+        {...listeners}
+        {...attributes}
+        aria-label="Arrastar jogador"
+        className="flex size-8 shrink-0 touch-none items-center justify-center text-muted-foreground active:cursor-grabbing"
+      >
+        <GripVertical className="size-4" />
       </span>
     </div>
   )
@@ -54,19 +80,28 @@ function TeamColumn({
   team,
   teamIndex,
   playersPerTeam,
+  selectedPlayerId,
   onSetCaptain,
+  onToggleSelect,
+  onMoveSelectedHere,
 }: {
   team: FormationTeam
   teamIndex: number
   playersPerTeam: number
+  selectedPlayerId: string | null
   onSetCaptain: (teamIndex: number, playerId: string) => void
+  onToggleSelect: (teamIndex: number, playerId: string) => void
+  onMoveSelectedHere: (teamIndex: number) => void
 }) {
   const { setNodeRef, isOver } = useDroppable({ id: `team-${teamIndex}` })
   const shortfall = playersPerTeam - team.players.length
 
   return (
     <Card ref={setNodeRef} className={cn(isOver && "ring-2 ring-primary")}>
-      <CardHeader>
+      <CardHeader
+        className={selectedPlayerId ? "cursor-pointer" : undefined}
+        onClick={selectedPlayerId ? () => onMoveSelectedHere(teamIndex) : undefined}
+      >
         <CardTitle className="flex items-center gap-2 text-base">
           <span
             className="inline-block size-3 rounded-full border"
@@ -83,6 +118,9 @@ function TeamColumn({
             {shortfall === 1 ? "" : "s"} do time que perder para jogar.
           </p>
         )}
+        {selectedPlayerId && (
+          <p className="text-xs text-primary">Toque aqui para mover o jogador selecionado</p>
+        )}
       </CardHeader>
       <CardContent className="flex min-h-24 flex-col gap-2">
         {captainFirst(team).map((player) => (
@@ -91,7 +129,9 @@ function TeamColumn({
             player={player}
             teamIndex={teamIndex}
             isCaptain={team.captainId === player.id}
+            isSelected={selectedPlayerId === player.id}
             onSetCaptain={() => onSetCaptain(teamIndex, player.id)}
+            onToggleSelect={() => onToggleSelect(teamIndex, player.id)}
           />
         ))}
       </CardContent>
@@ -110,6 +150,9 @@ export function TeamsBoard({
   onMovePlayer: (playerId: string, fromTeamIndex: number, toTeamIndex: number) => void
   onSetCaptain: (teamIndex: number, playerId: string) => void
 }) {
+  const [selected, setSelected] = useState<{ teamIndex: number; playerId: string } | null>(null)
+  const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 8 } }))
+
   function handleDragEnd(event: DragEndEvent) {
     const { active, over } = event
     if (!over) return
@@ -120,19 +163,40 @@ export function TeamsBoard({
     onMovePlayer(playerId, fromIndex, toIndex)
   }
 
+  function toggleSelect(teamIndex: number, playerId: string) {
+    setSelected((prev) => (prev?.playerId === playerId ? null : { teamIndex, playerId }))
+  }
+
+  function moveSelectedHere(toIndex: number) {
+    if (!selected) return
+    if (selected.teamIndex !== toIndex) {
+      onMovePlayer(selected.playerId, selected.teamIndex, toIndex)
+    }
+    setSelected(null)
+  }
+
   return (
-    <DndContext onDragEnd={handleDragEnd}>
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-        {teams.map((team, i) => (
-          <TeamColumn
-            key={i}
-            team={team}
-            teamIndex={i}
-            playersPerTeam={playersPerTeam}
-            onSetCaptain={onSetCaptain}
-          />
-        ))}
-      </div>
-    </DndContext>
+    <div className="flex flex-col gap-4">
+      <p className="text-xs text-muted-foreground">
+        Toque no nome do jogador para selecionar e depois toque no time de destino — ou arraste
+        pela alça ⠿.
+      </p>
+      <DndContext sensors={sensors} onDragEnd={handleDragEnd}>
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+          {teams.map((team, i) => (
+            <TeamColumn
+              key={i}
+              team={team}
+              teamIndex={i}
+              playersPerTeam={playersPerTeam}
+              selectedPlayerId={selected?.playerId ?? null}
+              onSetCaptain={onSetCaptain}
+              onToggleSelect={toggleSelect}
+              onMoveSelectedHere={moveSelectedHere}
+            />
+          ))}
+        </div>
+      </DndContext>
+    </div>
   )
 }

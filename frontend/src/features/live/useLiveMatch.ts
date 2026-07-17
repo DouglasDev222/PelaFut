@@ -1,13 +1,14 @@
-import { useCallback, useEffect, useState } from "react"
+import { useCallback, useEffect, useRef, useState } from "react"
 import type { Match, Player, RoundDecidedBy, RoundResult } from "@pelafut/shared"
 import { supabase } from "@/lib/supabaseClient"
 import {
   borrowShortfall,
+  elapsedSecondsFor,
   resolveRoundOutcome,
   suggestBorrowedPlayers,
   type RotationTeam,
 } from "@/features/live/rotation"
-import { resolvePenaltyShootout, type PenaltyKick, type PenaltyState } from "@/features/live/penalties"
+import { regulationKicksFor, resolvePenaltyShootout, type PenaltyKick, type PenaltyState } from "@/features/live/penalties"
 
 export interface LiveTeam {
   id: string
@@ -80,7 +81,27 @@ export interface PenaltyShootoutState {
   homeTeamId: string
   awayTeamId: string
   firstKickerTeamId: string
+  regulationKicks: number
   kicks: (PenaltyKick & { id: string })[]
+}
+
+/** Teams leaving court and teams entering it at a round rotation, shown in a blocking pop-up before the new round appears. */
+export interface TransitionInfo {
+  leaving: LiveTeam[]
+  entering: LiveTeam[]
+}
+
+/** Enough to undo the single most recent round finalization — a safety net for "I ended the wrong game." */
+interface UndoSnapshot {
+  finishedRoundId: string
+  newRoundId: string
+  previousQueuePositions: { teamId: string; queuePosition: number }[]
+}
+
+/** A brand-new round always starts paused-at-zero, so the organizer starts the clock at the exact right moment. */
+function freshRoundTimestamps() {
+  const now = new Date().toISOString()
+  return { started_at: now, paused_at: now }
 }
 
 export function useLiveMatch(matchId: string) {
@@ -94,17 +115,25 @@ export function useLiveMatch(matchId: string) {
   const [pendingDirectWinner, setPendingDirectWinner] = useState<PendingTieOrder | null>(null)
   const [pendingPenaltyFirstKicker, setPendingPenaltyFirstKicker] = useState<PendingTieOrder | null>(null)
   const [penaltyShootout, setPenaltyShootout] = useState<PenaltyShootoutState | null>(null)
+  const [pendingTransition, setPendingTransition] = useState<TransitionInfo | null>(null)
+  const [undoSnapshot, setUndoSnapshot] = useState<UndoSnapshot | null>(null)
   const [phase, setPhase] = useState<LivePhase>("not_started")
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const hasLoadedRef = useRef(false)
 
   const load = useCallback(async () => {
-    setLoading(true)
+    // Only the very first load blanks the screen — later refetches (after ending a
+    // round, confirming a borrow, etc.) update the visible cards in place instead
+    // of flashing the whole page back to a loading state.
+    if (!hasLoadedRef.current) setLoading(true)
+    hasLoadedRef.current = true
     setError(null)
     setPendingTieOrder(null)
     setPendingTieDecision(null)
     setPendingDirectWinner(null)
     setPendingPenaltyFirstKicker(null)
+    setPendingTransition(null)
 
     const { data: matchData, error: matchError } = await supabase
       .from("matches")
@@ -208,6 +237,9 @@ export function useLiveMatch(matchId: string) {
         awayTeamId: latestRound.away_team_id as string,
         // The first kick recorded reveals who was chosen to go first.
         firstKickerTeamId: penaltyKickRows[0]!.team_id as string,
+        // The organizer's best-of-N override isn't persisted — a reload
+        // mid-shootout falls back to the player-count default.
+        regulationKicks: regulationKicksFor(matchData.players_per_team as number),
         kicks: penaltyKickRows.map((k) => ({
           id: k.id as string,
           teamId: k.team_id as string,
@@ -328,6 +360,7 @@ export function useLiveMatch(matchId: string) {
       home_team_id: first!.id,
       away_team_id: second!.id,
       status: "in_progress",
+      ...freshRoundTimestamps(),
     })
     if (insertError) {
       setError(insertError.message)
@@ -432,6 +465,18 @@ export function useLiveMatch(matchId: string) {
     return finalizeRound(result)
   }
 
+  /**
+   * Backs out of the whole tie-resolution flow — nothing in it writes to the
+   * DB until `finalizeRound` actually runs, so clearing this local state is
+   * always safe and simply returns the organizer to the still-in-progress round.
+   */
+  function cancelTieFlow() {
+    setPendingTieDecision(null)
+    setPendingTieOrder(null)
+    setPendingDirectWinner(null)
+    setPendingPenaltyFirstKicker(null)
+  }
+
   function chooseTieResolution(mode: TieResolutionMode) {
     if (!pendingTieDecision) return
     const { homeTeamId, awayTeamId } = pendingTieDecision
@@ -446,10 +491,10 @@ export function useLiveMatch(matchId: string) {
     setPendingTieDecision(null)
   }
 
-  function startPenaltyShootout(firstKickerTeamId: string) {
+  function startPenaltyShootout(firstKickerTeamId: string, regulationKicks: number) {
     if (!pendingPenaltyFirstKicker || !currentRound) return
     const { homeTeamId, awayTeamId } = pendingPenaltyFirstKicker
-    setPenaltyShootout({ roundId: currentRound.id, homeTeamId, awayTeamId, firstKickerTeamId, kicks: [] })
+    setPenaltyShootout({ roundId: currentRound.id, homeTeamId, awayTeamId, firstKickerTeamId, regulationKicks, kicks: [] })
     setPendingPenaltyFirstKicker(null)
   }
 
@@ -467,13 +512,19 @@ export function useLiveMatch(matchId: string) {
     return outcome
   }
 
+  // Small pickup teams default to a shorter shootout (best of 3/4) instead
+  // of always best of 5 — see `regulationKicksFor`. The organizer can still
+  // override it (best of 3/4/5) when choosing who kicks first.
+  const defaultPenaltyBestOf = regulationKicksFor(match?.players_per_team ?? 5)
+
   function penaltyState(): PenaltyState | null {
     if (!penaltyShootout) return null
     return resolvePenaltyShootout(
       penaltyShootout.kicks,
       penaltyShootout.homeTeamId,
       penaltyShootout.awayTeamId,
-      penaltyShootout.firstKickerTeamId
+      penaltyShootout.firstKickerTeamId,
+      penaltyShootout.regulationKicks
     )
   }
 
@@ -525,6 +576,9 @@ export function useLiveMatch(matchId: string) {
   ) {
     if (!currentRound || !match) return { error: "Nenhuma rodada ativa" }
 
+    const finishedRoundId = currentRound.id
+    const previousQueuePositions = teams.map((t) => ({ teamId: t.id, queuePosition: t.queuePosition }))
+
     const { error: finishError } = await supabase
       .from("match_rounds")
       .update({ status: "finished", result, decided_by: decidedBy, finished_at: new Date().toISOString() })
@@ -567,6 +621,7 @@ export function useLiveMatch(matchId: string) {
           home_team_id: currentRound.homeTeamId,
           away_team_id: currentRound.awayTeamId,
           status: "in_progress",
+          ...freshRoundTimestamps(),
         })
         .select("id")
         .single()
@@ -583,6 +638,7 @@ export function useLiveMatch(matchId: string) {
         setError(carryOverError)
         return { error: carryOverError }
       }
+      setUndoSnapshot({ finishedRoundId, newRoundId: newRound.id as string, previousQueuePositions })
       await load()
       return { error: null, result }
     }
@@ -606,6 +662,7 @@ export function useLiveMatch(matchId: string) {
         home_team_id: outcome.nextHomeTeamId,
         away_team_id: outcome.nextAwayTeamId,
         status: "in_progress",
+        ...freshRoundTimestamps(),
       })
       .select("id")
       .single()
@@ -625,8 +682,69 @@ export function useLiveMatch(matchId: string) {
       return { error: carryOverError }
     }
 
+    setUndoSnapshot({ finishedRoundId, newRoundId: newRound.id as string, previousQueuePositions })
+
+    const beforeIds = new Set([currentRound.homeTeamId, currentRound.awayTeamId])
+    const afterIds = new Set([outcome.nextHomeTeamId, outcome.nextAwayTeamId])
+    const leaving = teams.filter((t) => beforeIds.has(t.id) && !afterIds.has(t.id))
+    const entering = teams.filter((t) => afterIds.has(t.id) && !beforeIds.has(t.id))
+    if (leaving.length > 0 || entering.length > 0) {
+      setPendingTransition({ leaving, entering })
+      return { error: null, result }
+    }
+
     await load()
     return { error: null, result }
+  }
+
+  async function confirmTransition() {
+    setPendingTransition(null)
+    await load()
+  }
+
+  /**
+   * Safety net for "I ended the wrong game": deletes the round that was just
+   * created, reopens the one that was just finished (clearing its result),
+   * and puts every team's queue position back to what it was before the
+   * rotation — undoing exactly one `finalizeRound` call, not a full history.
+   */
+  async function undoLastRound() {
+    if (!undoSnapshot) return { error: "Nada para desfazer" }
+    const { finishedRoundId, newRoundId, previousQueuePositions } = undoSnapshot
+
+    // Delete anything hanging off the round being discarded before the round itself.
+    await supabase.from("match_round_penalty_kicks").delete().eq("round_id", newRoundId)
+    await supabase.from("match_round_borrowed_players").delete().eq("round_id", newRoundId)
+    await supabase.from("match_round_goals").delete().eq("round_id", newRoundId)
+    const { error: deleteRoundError } = await supabase.from("match_rounds").delete().eq("id", newRoundId)
+    if (deleteRoundError) {
+      setError(deleteRoundError.message)
+      return { error: deleteRoundError.message }
+    }
+
+    const { error: revertError } = await supabase
+      .from("match_rounds")
+      .update({ status: "in_progress", result: null, decided_by: null, finished_at: null })
+      .eq("id", finishedRoundId)
+    if (revertError) {
+      setError(revertError.message)
+      return { error: revertError.message }
+    }
+
+    for (const { teamId, queuePosition } of previousQueuePositions) {
+      const { error: posError } = await supabase
+        .from("teams")
+        .update({ queue_position: queuePosition })
+        .eq("id", teamId)
+      if (posError) {
+        setError(posError.message)
+        return { error: posError.message }
+      }
+    }
+
+    setUndoSnapshot(null)
+    await load()
+    return { error: null }
   }
 
   async function finishMatch() {
@@ -671,6 +789,26 @@ export function useLiveMatch(matchId: string) {
     setCurrentRound((prev) => (prev ? { ...prev, pausedAt: null, pausedSeconds } : prev))
   }
 
+  /**
+   * Zeroes the clock back to 00:00 while staying paused — "consumes" all
+   * elapsed time as pause time instead of touching `started_at`, so the
+   * organizer can restart from a clean zero at the exact right moment
+   * without it being confused with a brand-new round.
+   */
+  async function restartTimer() {
+    if (!currentRound || !currentRound.pausedAt) return
+    const pausedSeconds = currentRound.pausedSeconds + elapsedSecondsFor(currentRound)
+    const { error: updateError } = await supabase
+      .from("match_rounds")
+      .update({ paused_seconds: pausedSeconds })
+      .eq("id", currentRound.id)
+    if (updateError) {
+      setError(updateError.message)
+      return
+    }
+    setCurrentRound((prev) => (prev ? { ...prev, pausedSeconds } : prev))
+  }
+
   async function reopenMatch() {
     const { data: roundRows, error: roundError } = await supabase
       .from("match_rounds")
@@ -693,6 +831,7 @@ export function useLiveMatch(matchId: string) {
         home_team_id: first!.id,
         away_team_id: second!.id,
         status: "in_progress",
+        ...freshRoundTimestamps(),
       })
       if (insertError) {
         setError(insertError.message)
@@ -724,6 +863,9 @@ export function useLiveMatch(matchId: string) {
     pendingPenaltyFirstKicker,
     penaltyShootout,
     penaltyState: penaltyState(),
+    defaultPenaltyBestOf,
+    pendingTransition,
+    canUndoLastRound: !!undoSnapshot,
     phase,
     loading,
     error,
@@ -733,6 +875,7 @@ export function useLiveMatch(matchId: string) {
     suggestedBorrowFor,
     confirmBorrow,
     endRound,
+    cancelTieFlow,
     chooseTieResolution,
     confirmTieOrder,
     declareDirectWinner,
@@ -740,10 +883,13 @@ export function useLiveMatch(matchId: string) {
     recordPenaltyKick,
     undoLastPenaltyKick,
     confirmPenaltyWinner,
+    confirmTransition,
+    undoLastRound,
     finishMatch,
     reopenMatch,
     pauseTimer,
     resumeTimer,
+    restartTimer,
     reload: load,
   }
 }
