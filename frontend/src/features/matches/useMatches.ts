@@ -6,20 +6,29 @@ import { supabase } from "@/lib/supabaseClient"
 export function useMatches() {
   const { user } = useAuth()
   const [matches, setMatches] = useState<Match[]>([])
+  const [participantCounts, setParticipantCounts] = useState<Record<string, number>>({})
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
   const reload = useCallback(async () => {
     if (!user) return
     setLoading(true)
-    const { data, error } = await supabase
-      .from("matches")
-      .select("*")
-      .order("match_date", { ascending: false })
+    const [{ data, error }, { data: mpData, error: mpError }] = await Promise.all([
+      supabase.from("matches").select("*").order("match_date", { ascending: false }),
+      // RLS scopes this to the owner's matches, so no explicit filter is needed.
+      supabase.from("match_players").select("match_id"),
+    ])
     if (error) {
       setError(error.message)
     } else {
       setMatches(data as Match[])
+    }
+    if (!mpError) {
+      const counts: Record<string, number> = {}
+      for (const row of (mpData as { match_id: string }[] | null) ?? []) {
+        counts[row.match_id] = (counts[row.match_id] ?? 0) + 1
+      }
+      setParticipantCounts(counts)
     }
     setLoading(false)
   }, [user])
@@ -100,7 +109,17 @@ export function useMatches() {
     return { error: null }
   }
 
-  return { matches, loading, error, reload, createMatch, updateMatch, deleteMatch, clearMatchData }
+  return {
+    matches,
+    participantCounts,
+    loading,
+    error,
+    reload,
+    createMatch,
+    updateMatch,
+    deleteMatch,
+    clearMatchData,
+  }
 }
 
 export async function fetchMatch(id: string) {

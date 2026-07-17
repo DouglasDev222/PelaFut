@@ -65,7 +65,7 @@ const FEATURED_ACTION_KEYS: Record<MatchStatus, ActionKey[]> = {
 }
 
 export function MatchListPage() {
-  const { matches, loading, error, deleteMatch } = useMatches()
+  const { matches, participantCounts, loading, error, deleteMatch } = useMatches()
 
   if (loading) return null
 
@@ -81,8 +81,8 @@ export function MatchListPage() {
 
       {error && <p className="text-sm text-destructive">{error}</p>}
 
-      <MatchSection title="Próximas" matches={upcoming} onDelete={deleteMatch} />
-      <MatchSection title="Passadas" matches={past} onDelete={deleteMatch} />
+      <MatchSection title="Próximas" matches={upcoming} participantCounts={participantCounts} onDelete={deleteMatch} />
+      <MatchSection title="Passadas" matches={past} participantCounts={participantCounts} onDelete={deleteMatch} />
     </div>
   )
 }
@@ -90,10 +90,12 @@ export function MatchListPage() {
 function MatchSection({
   title,
   matches,
+  participantCounts,
   onDelete,
 }: {
   title: string
   matches: Match[]
+  participantCounts: Record<string, number>
   onDelete: (id: string) => Promise<{ error: string | null }>
 }) {
   return (
@@ -101,7 +103,12 @@ function MatchSection({
       <h2 className="text-sm font-medium text-muted-foreground">{title}</h2>
       {matches.length === 0 && <p className="text-sm text-muted-foreground">Nenhuma pelada aqui.</p>}
       {matches.map((match) => (
-        <MatchCard key={match.id} match={match} onDelete={onDelete} />
+        <MatchCard
+          key={match.id}
+          match={match}
+          participantCount={participantCounts[match.id] ?? 0}
+          onDelete={onDelete}
+        />
       ))}
     </div>
   )
@@ -109,9 +116,11 @@ function MatchSection({
 
 function MatchCard({
   match,
+  participantCount,
   onDelete,
 }: {
   match: Match
+  participantCount: number
   onDelete: (id: string) => Promise<{ error: string | null }>
 }) {
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false)
@@ -134,7 +143,10 @@ function MatchCard({
               {match.location ? ` · ${match.location}` : ""}
             </p>
             <p className="text-xs text-muted-foreground">
-              {match.max_players} jogadores · {match.players_per_team}/time
+              <span className={cn(participantCount > 0 && "font-medium text-foreground")}>
+                {participantCount}/{match.max_players} participantes
+              </span>{" "}
+              · {match.players_per_team}/time
             </p>
           </div>
           <div className="flex shrink-0 items-center gap-1">
