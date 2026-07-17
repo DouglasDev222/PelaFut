@@ -6,6 +6,7 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Switch } from "@/components/ui/switch"
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { ConfirmDialog } from "@/components/ui/confirm-dialog"
 import { toastManager } from "@/components/ui/toast"
@@ -14,12 +15,15 @@ interface MatchFormProps {
   initial?: Match
   onSubmit: (input: MatchInput) => Promise<{ error: string | null }>
   onClearData?: () => Promise<{ error: string | null }>
+  /** Existing peladas offered as templates when creating a new one. */
+  templates?: Match[]
 }
 
-export function MatchForm({ initial, onSubmit, onClearData }: MatchFormProps) {
+export function MatchForm({ initial, onSubmit, onClearData, templates }: MatchFormProps) {
   const navigate = useNavigate()
   const [clearConfirmOpen, setClearConfirmOpen] = useState(false)
   const [dataCleared, setDataCleared] = useState(false)
+  const [templateId, setTemplateId] = useState("")
 
   const [name, setName] = useState(initial?.name ?? "")
   const [location, setLocation] = useState(initial?.location ?? "")
@@ -41,6 +45,22 @@ export function MatchForm({ initial, onSubmit, onClearData }: MatchFormProps) {
 
   const [error, setError] = useState<string | null>(null)
   const [submitting, setSubmitting] = useState(false)
+
+  // Copies the settings of an existing pelada into the form, leaving the
+  // identity fields (name and date) for the user to fill in.
+  function applyTemplate(m: Match) {
+    setLocation(m.location ?? "")
+    setStartTime(m.start_time ?? "")
+    setMaxPlayers(String(m.max_players))
+    setPlayersPerTeam(String(m.players_per_team))
+    setEndCondition(m.end_condition)
+    setMatchDuration(m.match_duration_minutes != null ? String(m.match_duration_minutes) : "10")
+    setGoalsToWin(m.goals_to_win != null ? String(m.goals_to_win) : "2")
+    setTieBothLeave(m.tie_both_leave_allowed)
+    setMaxTimePerTeam(m.max_time_per_team_minutes != null ? String(m.max_time_per_team_minutes) : "")
+  }
+
+  const showTemplates = !initial && templates && templates.length > 0
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault()
@@ -90,6 +110,40 @@ export function MatchForm({ initial, onSubmit, onClearData }: MatchFormProps) {
       </CardHeader>
       <CardContent>
         <form id="match-form" className="flex flex-col gap-4" onSubmit={handleSubmit}>
+          {showTemplates && (
+            <div className="flex flex-col gap-2 rounded-lg border border-dashed p-3">
+              <Label htmlFor="template">Copiar configurações de outra pelada</Label>
+              <Select
+                value={templateId}
+                onValueChange={(v) => {
+                  const tid = v as string
+                  setTemplateId(tid)
+                  const m = templates!.find((t) => t.id === tid)
+                  if (m) applyTemplate(m)
+                }}
+              >
+                <SelectTrigger id="template">
+                  <SelectValue placeholder="Selecione uma pelada...">
+                    {(value: string) => {
+                      const m = templates!.find((t) => t.id === value)
+                      return m ? `${m.name} · ${m.match_date}` : "Selecione uma pelada..."
+                    }}
+                  </SelectValue>
+                </SelectTrigger>
+                <SelectContent>
+                  {templates!.map((m) => (
+                    <SelectItem key={m.id} value={m.id}>
+                      {m.name} · {m.match_date}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <p className="text-xs text-muted-foreground">
+                Preenche local, horário e regras. O nome e a data você define abaixo.
+              </p>
+            </div>
+          )}
+
           <div className="flex flex-col gap-2">
             <Label htmlFor="name">Nome</Label>
             <Input id="name" required value={name} onChange={(e) => setName(e.target.value)} />
