@@ -30,7 +30,7 @@ export function AppShell({
   const isRoot = ROOT_PATHS.has(location.pathname)
 
   return (
-    <div className="flex min-h-svh flex-col bg-background">
+    <div className="flex h-dvh flex-col bg-background">
       <header
         className="sticky top-0 z-40 flex h-14 shrink-0 items-center gap-1 border-b bg-background/95 px-1 backdrop-blur"
         style={{ paddingTop: "env(safe-area-inset-top)" }}
