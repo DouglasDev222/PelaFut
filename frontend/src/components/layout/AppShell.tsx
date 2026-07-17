@@ -66,12 +66,13 @@ export function AppShell({
               <Link
                 key={path}
                 to={path}
+                aria-label={label}
                 className={cn(
-                  "flex flex-1 flex-col items-center gap-0.5 py-2 text-xs",
+                  "flex min-h-16 flex-1 flex-col items-center justify-center gap-1 py-2 text-xs transition-colors active:bg-muted",
                   active ? "text-primary" : "text-muted-foreground"
                 )}
               >
-                <Icon className="size-5" />
+                <Icon className="size-6" />
                 {label}
               </Link>
             )
