@@ -5,6 +5,7 @@ import { teamCapacity, useTeamFormation } from "@/features/teams/useTeamFormatio
 import { TeamsBoard } from "@/features/teams/TeamsBoard"
 import { TEAM_COLORS } from "@/features/teams/teamColors"
 import { MatchQuickSettingsDialog } from "@/features/matches/MatchQuickSettingsDialog"
+import { ConfirmDialog } from "@/components/ui/confirm-dialog"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
@@ -40,6 +41,7 @@ export function TeamFormationPage({
     reserveDraftsActively,
     setReserveDraftsActively,
     canUndoLastPick,
+    matchStatus,
     setTeamColor,
     startDraft,
     pickPlayer,
@@ -51,9 +53,17 @@ export function TeamFormationPage({
     save,
     reload,
     changePlayersPerTeam,
+    resetToDraft,
   } = useTeamFormation(id!)
 
   const [settingsOpen, setSettingsOpen] = useState(false)
+  const [resetConfirmOpen, setResetConfirmOpen] = useState(false)
+
+  async function handleResetToDraft() {
+    setResetConfirmOpen(false)
+    const { error } = await resetToDraft()
+    if (!error) navigate("/matches")
+  }
 
   useEffect(() => {
     if (phase === "draft") {
@@ -272,6 +282,18 @@ export function TeamFormationPage({
         </div>
       )}
 
+      {matchStatus === "teams_formed" && (
+        <div className="flex justify-center pt-2">
+          <button
+            type="button"
+            className="text-xs text-destructive underline"
+            onClick={() => setResetConfirmOpen(true)}
+          >
+            Excluir times e voltar para rascunho
+          </button>
+        </div>
+      )}
+
       <MatchQuickSettingsDialog
         open={settingsOpen}
         onOpenChange={setSettingsOpen}
@@ -280,6 +302,16 @@ export function TeamFormationPage({
         playersPerTeam={playersPerTeam}
         note="Mudar isso recalcula quantos times serão formados."
         onSave={({ playersPerTeam: n }) => changePlayersPerTeam(n)}
+      />
+
+      <ConfirmDialog
+        open={resetConfirmOpen}
+        title="Voltar a pelada para rascunho?"
+        description="Isso apaga os times formados e volta a pelada para rascunho. Os participantes continuam selecionados."
+        confirmLabel="Excluir times"
+        confirmVariant="destructive"
+        onOpenChange={setResetConfirmOpen}
+        onConfirm={handleResetToDraft}
       />
     </div>
   )

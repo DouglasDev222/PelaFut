@@ -120,6 +120,7 @@ export function useTeamFormation(matchId: string) {
   // genuine first-time setup apart from a "redo" that has a saved board to
   // cancel back to (see resetDraft/"Refazer times").
   const [hasSavedTeams, setHasSavedTeams] = useState(false)
+  const [matchStatus, setMatchStatus] = useState<string | null>(null)
   // When on, a reserve team drafts its own players (and captain) in turn
   // order instead of being auto-filled with leftovers. Set on the setup card.
   const [reserveDraftsActively, setReserveDraftsActively] = useState(false)
@@ -133,7 +134,7 @@ export function useTeamFormation(matchId: string) {
 
     const { data: match, error: matchError } = await supabase
       .from("matches")
-      .select("players_per_team")
+      .select("players_per_team, status")
       .eq("id", matchId)
       .single()
     if (matchError || !match) {
@@ -142,6 +143,7 @@ export function useTeamFormation(matchId: string) {
       return
     }
     setPlayersPerTeam(match.players_per_team)
+    setMatchStatus(match.status as string)
 
     const { data: matchPlayers, error: mpError } = await supabase
       .from("match_players")
@@ -425,6 +427,29 @@ export function useTeamFormation(matchId: string) {
     return { error: null }
   }
 
+  /**
+   * Deletes the formed teams and drops the match back to "draft". Only meant
+   * for matches still in the formation stage (guarded by the caller) — for a
+   * match that's been played, the game data lives on `match_rounds`, which
+   * cascades off `teams`, so this must never run there.
+   */
+  async function resetToDraft(): Promise<{ error: string | null }> {
+    const { error: deleteError } = await supabase.from("teams").delete().eq("match_id", matchId)
+    if (deleteError) {
+      setError(deleteError.message)
+      return { error: deleteError.message }
+    }
+    const { error: statusError } = await supabase
+      .from("matches")
+      .update({ status: "draft" })
+      .eq("id", matchId)
+    if (statusError) {
+      setError(statusError.message)
+      return { error: statusError.message }
+    }
+    return { error: null }
+  }
+
   return {
     teams,
     availablePlayers,
@@ -435,9 +460,11 @@ export function useTeamFormation(matchId: string) {
     saving,
     error,
     hasSavedTeams,
+    matchStatus,
     reserveDraftsActively,
     setReserveDraftsActively,
     changePlayersPerTeam,
+    resetToDraft,
     canUndoLastPick: draftHistory.length > 0,
     setTeamColor,
     startDraft,
