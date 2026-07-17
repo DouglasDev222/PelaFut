@@ -185,12 +185,15 @@ export function ParticipantSelectorPage({
   return (
     <div className="flex w-full flex-col gap-4">
       <div className="sticky top-0 z-10 -mx-4 flex flex-col gap-3 border-b bg-background px-4 py-3">
-        <div className="flex items-center justify-between gap-2">
-          <div>
-            <p className="font-medium">{match.name}</p>
-            <p className="text-sm text-muted-foreground">
-              {selectedIds.size}/{match.max_players} selecionados · {match.players_per_team}/time
-            </p>
+        <div className="flex items-center justify-between gap-2 rounded-lg border p-3">
+          <div className="flex flex-col">
+            <span className="font-medium">{match.name}</span>
+            <span className="text-sm">
+              Participantes: <strong>{selectedIds.size}/{match.max_players}</strong>
+            </span>
+            <span className="text-sm">
+              Jogadores por time: <strong>{match.players_per_team}</strong>
+            </span>
           </div>
           <Button variant="outline" size="sm" className="shrink-0" onClick={() => setSettingsOpen(true)}>
             <Settings2 className="size-4" /> Ajustar
