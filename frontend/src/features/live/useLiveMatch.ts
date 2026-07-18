@@ -797,7 +797,9 @@ export function useLiveMatch(matchId: string) {
    */
   async function restartTimer() {
     if (!currentRound || !currentRound.pausedAt) return
-    const pausedSeconds = currentRound.pausedSeconds + elapsedSecondsFor(currentRound)
+    // paused_seconds is an integer column — elapsedSecondsFor returns a float
+    // (ms/1000), so round it before persisting.
+    const pausedSeconds = currentRound.pausedSeconds + Math.round(elapsedSecondsFor(currentRound))
     const { error: updateError } = await supabase
       .from("match_rounds")
       .update({ paused_seconds: pausedSeconds })
