@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from "react"
 import type { Player } from "@pelafut/shared"
 import { supabase } from "@/lib/supabaseClient"
 import { colorForIndex } from "@/features/teams/teamColors"
+import { drawBalanced, drawRandom } from "@/features/teams/formationDraw"
 
 export interface FormationTeam {
   number: number
@@ -10,7 +11,16 @@ export interface FormationTeam {
   players: Player[]
 }
 
-export type FormationPhase = "setup" | "draft" | "done"
+export type FormationPhase = "method" | "setup" | "draft" | "done"
+
+/**
+ * How the teams get formed:
+ * - "alternado": captains take turns picking (the classic draft).
+ * - "livre": pick a team and fill it freely, then move to another.
+ * - "sorteio": the app draws the teams automatically (optionally balanced by
+ *   player stars).
+ */
+export type FormationMethod = "alternado" | "livre" | "sorteio"
 
 /** A full snapshot of the draft state taken before a pick, so it can be undone. */
 interface DraftSnapshot {
@@ -111,7 +121,16 @@ export function useTeamFormation(matchId: string) {
   const [availablePlayers, setAvailablePlayers] = useState<Player[]>([])
   const [participants, setParticipants] = useState<Player[]>([])
   const [playersPerTeam, setPlayersPerTeam] = useState(0)
-  const [phase, setPhase] = useState<FormationPhase>("setup")
+  const [phase, setPhase] = useState<FormationPhase>("method")
+  // Chosen on the method screen; drives the setup/draft flow. Transient — it's
+  // a per-formation choice, not persisted (like reserveDraftsActively).
+  const [formationMethod, setFormationMethod] = useState<FormationMethod>("alternado")
+  // Sorteio option: distribute players so the teams' star averages stay close.
+  const [balanceByStars, setBalanceByStars] = useState(true)
+  // True once the board ("done") was reached by forming teams in this session
+  // (finishDraft/runSorteio) rather than by loading a saved board. Lets the
+  // back button step back into the flow instead of leaving the page.
+  const [formedInSession, setFormedInSession] = useState(false)
   const [currentTeamIndex, setCurrentTeamIndex] = useState(0)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -131,6 +150,9 @@ export function useTeamFormation(matchId: string) {
   const load = useCallback(async () => {
     setLoading(true)
     setError(null)
+    // A load always lands on either the saved board or a fresh method screen —
+    // neither counts as "just formed in this session".
+    setFormedInSession(false)
 
     const { data: match, error: matchError } = await supabase
       .from("matches")
@@ -194,7 +216,8 @@ export function useTeamFormation(matchId: string) {
     setAvailablePlayers(loadedParticipants)
     setCurrentTeamIndex(0)
     setDraftHistory([])
-    setPhase("setup")
+    // Fresh formation starts on the method question, before setup.
+    setPhase("method")
     setLoading(false)
   }, [matchId])
 
@@ -206,10 +229,28 @@ export function useTeamFormation(matchId: string) {
     setTeams((prev) => prev.map((t, i) => (i === teamIndex ? { ...t, color } : t)))
   }
 
+  /** Confirms the chosen method and moves on to color/team setup. */
+  function proceedToSetup() {
+    setPhase("setup")
+  }
+
+  /**
+   * Steps back from setup to the method question. Memoized: it's wired into the
+   * AppShell back button through a useEffect dependency array (see backToSetup).
+   */
+  const backToMethod = useCallback(() => {
+    setPhase("method")
+  }, [])
+
   function startDraft() {
     setCurrentTeamIndex(0)
     setDraftHistory([])
     setPhase("draft")
+  }
+
+  /** Sets which team is being filled (free method — the organizer taps a team). */
+  function selectTeam(teamIndex: number) {
+    setCurrentTeamIndex(teamIndex)
   }
 
   function pickPlayer(playerId: string) {
@@ -219,6 +260,24 @@ export function useTeamFormation(matchId: string) {
     if (!pickingTeam || !pickedPlayer || pickingTeam.players.some((p) => p.id === pickedPlayer.id)) {
       return
     }
+
+    // Free method: add to the actively selected team without rotating turns or
+    // auto-filling a reserve. The team can't take more than its capacity.
+    if (formationMethod === "livre") {
+      const capacity = teamCapacity(currentTeamIndex, teams.length, playersPerTeam, participants.length)
+      if (pickingTeam.players.length >= capacity) return
+      setDraftHistory((h) => [...h, { teams, availablePlayers, currentTeamIndex, phase }])
+      setTeams((prev) =>
+        prev.map((t, i) =>
+          i === currentTeamIndex
+            ? { ...t, captainId: t.captainId ?? pickedPlayer.id, players: [...t.players, pickedPlayer] }
+            : t
+        )
+      )
+      setAvailablePlayers((prev) => prev.filter((p) => p.id !== playerId))
+      return
+    }
+
     setDraftHistory((h) => [...h, { teams, availablePlayers, currentTeamIndex, phase }])
 
     let updatedTeams = teams
@@ -284,6 +343,49 @@ export function useTeamFormation(matchId: string) {
 
   /** Moves from the (completed) draft to the board once the organizer confirms. */
   function finishDraft() {
+    setFormedInSession(true)
+    setPhase("done")
+  }
+
+  /**
+   * Steps back from the board to the pick screen (alternado/livre). The draft
+   * state is untouched by finishDraft, so this simply re-shows it. Memoized —
+   * it feeds the AppShell back button through a useEffect dependency array.
+   */
+  const backToDraft = useCallback(() => {
+    setPhase("draft")
+  }, [])
+
+  /**
+   * Auto-forms the teams (sorteio method) and lands straight on the board for
+   * review. Uses the star-balanced draw when `balanceByStars` is on, otherwise
+   * a plain random draw. Each team's captain is its highest-rated player. Can
+   * be re-run from the board ("Sortear de novo").
+   */
+  function runSorteio() {
+    const capacities = teams.map((_, i) =>
+      teamCapacity(i, teams.length, playersPerTeam, participants.length)
+    )
+    const assignments = balanceByStars
+      ? drawBalanced(participants, capacities)
+      : drawRandom(participants, capacities)
+    const byId = new Map(participants.map((p) => [p.id, p]))
+
+    setTeams((prev) =>
+      prev.map((t, i) => {
+        const players = (assignments[i] ?? [])
+          .map((id) => byId.get(id))
+          .filter((p): p is Player => p != null)
+        const captain = players.reduce<Player | null>(
+          (best, p) => (best == null || (p.skill_level ?? 0) > (best.skill_level ?? 0) ? p : best),
+          null
+        )
+        return { ...t, players, captainId: captain?.id ?? null }
+      })
+    )
+    setAvailablePlayers([])
+    setDraftHistory([])
+    setFormedInSession(true)
     setPhase("done")
   }
 
@@ -355,7 +457,8 @@ export function useTeamFormation(matchId: string) {
     setCurrentTeamIndex(0)
     setReserveDraftsActively(false)
     setDraftHistory([])
-    setPhase("setup")
+    // A full do-over goes back to the method question, not just setup.
+    setPhase("method")
   }
 
   /**
@@ -532,13 +635,23 @@ export function useTeamFormation(matchId: string) {
     error,
     hasSavedTeams,
     matchStatus,
+    formationMethod,
+    setFormationMethod,
+    balanceByStars,
+    setBalanceByStars,
     reserveDraftsActively,
     setReserveDraftsActively,
     changePlayersPerTeam,
     resetToDraft,
     canUndoLastPick: draftHistory.length > 0,
+    formedInSession,
     setTeamColor,
+    proceedToSetup,
+    backToMethod,
+    backToDraft,
     startDraft,
+    runSorteio,
+    selectTeam,
     pickPlayer,
     finishDraft,
     undoLastPick,

@@ -12,6 +12,8 @@ import { GripVertical, Star } from "lucide-react"
 import type { Player } from "@pelafut/shared"
 import { captainFirst, type FormationTeam } from "@/features/teams/useTeamFormation"
 import { TeamColorPicker } from "@/features/teams/TeamColorPicker"
+import { TeamBalanceBar } from "@/features/teams/TeamBalanceBar"
+import type { TeamBalance } from "@/features/teams/teamStrength"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { cn } from "@/lib/utils"
 
@@ -81,6 +83,7 @@ function TeamColumn({
   team,
   teamIndex,
   playersPerTeam,
+  balance,
   selectedPlayerId,
   onSetCaptain,
   onToggleSelect,
@@ -90,6 +93,7 @@ function TeamColumn({
   team: FormationTeam
   teamIndex: number
   playersPerTeam: number
+  balance?: TeamBalance
   selectedPlayerId: string | null
   onSetCaptain: (teamIndex: number, playerId: string) => void
   onToggleSelect: (teamIndex: number, playerId: string) => void
@@ -116,6 +120,7 @@ function TeamColumn({
             ({team.players.length})
           </span>
         </CardTitle>
+        {balance && <TeamBalanceBar balance={balance} />}
         {shortfall > 0 && (
           <p className="text-xs text-amber-600 dark:text-amber-500">
             Reserva: precisa pegar {shortfall} jogador{shortfall === 1 ? "" : "es"} emprestado
@@ -146,12 +151,14 @@ function TeamColumn({
 export function TeamsBoard({
   teams,
   playersPerTeam,
+  balances,
   onMovePlayer,
   onSetCaptain,
   onSetColor,
 }: {
   teams: FormationTeam[]
   playersPerTeam: number
+  balances?: TeamBalance[]
   onMovePlayer: (playerId: string, fromTeamIndex: number, toTeamIndex: number) => void
   onSetCaptain: (teamIndex: number, playerId: string) => void
   onSetColor: (teamIndex: number, hex: string) => void
@@ -195,6 +202,7 @@ export function TeamsBoard({
               team={team}
               teamIndex={i}
               playersPerTeam={playersPerTeam}
+              balance={balances?.[i]}
               selectedPlayerId={selected?.playerId ?? null}
               onSetCaptain={onSetCaptain}
               onToggleSelect={toggleSelect}

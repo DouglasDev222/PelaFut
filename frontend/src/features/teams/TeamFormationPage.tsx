@@ -1,9 +1,11 @@
 import { useEffect, useState } from "react"
 import { useParams, useNavigate } from "react-router-dom"
-import { Settings2, Undo2 } from "lucide-react"
-import { teamCapacity, useTeamFormation } from "@/features/teams/useTeamFormation"
+import { Check, RefreshCw, Settings2, Star, Undo2 } from "lucide-react"
+import { teamCapacity, useTeamFormation, type FormationMethod } from "@/features/teams/useTeamFormation"
 import { TeamsBoard } from "@/features/teams/TeamsBoard"
 import { TeamColorSelect } from "@/features/teams/TeamColorSelect"
+import { TeamBalanceBar } from "@/features/teams/TeamBalanceBar"
+import { formationBalance } from "@/features/teams/teamStrength"
 import { MatchQuickSettingsDialog } from "@/features/matches/MatchQuickSettingsDialog"
 import { ConfirmDialog } from "@/components/ui/confirm-dialog"
 import { Button } from "@/components/ui/button"
@@ -11,6 +13,54 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Switch } from "@/components/ui/switch"
 import { Label } from "@/components/ui/label"
 import { TeamRosterCard } from "@/components/TeamRosterCard"
+import { cn } from "@/lib/utils"
+
+const METHODS: { key: FormationMethod; title: string; desc: string }[] = [
+  {
+    key: "alternado",
+    title: "Alternado",
+    desc: "Os capitães revezam a escolha, um jogador por vez. Divisão justa e disputada.",
+  },
+  {
+    key: "livre",
+    title: "Livre",
+    desc: "Você escolhe um time e monta ele inteiro, depois passa para o próximo. Controle total.",
+  },
+  {
+    key: "sorteio",
+    title: "Sorteio",
+    desc: "O app monta os times automaticamente. Rápido e imparcial, com opção de equilibrar pelas estrelas.",
+  },
+]
+
+const SETUP_INTRO: Record<FormationMethod, string> = {
+  alternado:
+    "Escolha a cor de cada time. Depois os capitães revezam a escolha (o primeiro jogador escolhido de cada time vira o capitão).",
+  livre:
+    "Escolha a cor de cada time. Depois selecione um time e vá adicionando os jogadores dele, na ordem que quiser.",
+  sorteio:
+    "Escolha a cor de cada time. Depois é só sortear — você ainda pode ajustar tudo no quadro antes de salvar.",
+}
+
+const START_LABEL: Record<FormationMethod, string> = {
+  alternado: "Iniciar escolha de jogadores",
+  livre: "Iniciar montagem",
+  sorteio: "Sortear times",
+}
+
+/** Compact read-only rating shown next to a player in the pick list. */
+function PlayerRating({ value }: { value: number | null }) {
+  if (!value) {
+    return <span className="shrink-0 text-xs text-muted-foreground normal-case">sem nota</span>
+  }
+  return (
+    <span className="flex shrink-0 items-center gap-0.5" aria-label={`Avaliação ${value} de 5`}>
+      {Array.from({ length: value }).map((_, i) => (
+        <Star key={i} className="size-3.5 fill-primary text-primary" />
+      ))}
+    </span>
+  )
+}
 
 export interface TeamFormationBackContext {
   /** True when "back" is a step within this page's own wizard (cancel a
@@ -37,12 +87,22 @@ export function TeamFormationPage({
     saving,
     error,
     hasSavedTeams,
+    formationMethod,
+    setFormationMethod,
+    balanceByStars,
+    setBalanceByStars,
+    formedInSession,
     reserveDraftsActively,
     setReserveDraftsActively,
     canUndoLastPick,
     matchStatus,
     setTeamColor,
+    proceedToSetup,
+    backToMethod,
+    backToDraft,
     startDraft,
+    runSorteio,
+    selectTeam,
     pickPlayer,
     finishDraft,
     undoLastPick,
@@ -68,12 +128,36 @@ export function TeamFormationPage({
   useEffect(() => {
     if (phase === "draft") {
       onBackContextChange?.({ hasInFlowBack: true, goBack: backToSetup })
-    } else if (phase === "setup" && hasSavedTeams) {
+    } else if (phase === "setup") {
+      onBackContextChange?.({ hasInFlowBack: true, goBack: backToMethod })
+    } else if (phase === "method" && hasSavedTeams) {
       onBackContextChange?.({ hasInFlowBack: true, goBack: reload })
+    } else if (phase === "done" && formedInSession) {
+      // Teams formed in this session: "back" steps into the flow, not out of
+      // the page. Sorteio skips the pick screen, so it returns to setup.
+      onBackContextChange?.({
+        hasInFlowBack: true,
+        goBack: formationMethod === "sorteio" ? backToSetup : backToDraft,
+      })
     } else {
       onBackContextChange?.({ hasInFlowBack: false, goBack: () => {} })
     }
-  }, [phase, hasSavedTeams, backToSetup, reload, onBackContextChange])
+  }, [
+    phase,
+    hasSavedTeams,
+    formedInSession,
+    formationMethod,
+    backToSetup,
+    backToMethod,
+    backToDraft,
+    reload,
+    onBackContextChange,
+  ])
+
+  function startFormation() {
+    if (formationMethod === "sorteio") runSorteio()
+    else startDraft()
+  }
 
   if (loading) return null
 
@@ -92,17 +176,89 @@ export function TeamFormationPage({
     teamCapacity(i, teams.length, playersPerTeam, totalParticipants)
   )
   const reserveTeamIndex = capacities.findIndex((c) => c < playersPerTeam)
+  // The full participant pool works in both phases: during the draft it's the
+  // unpicked players plus everyone already on a team; on the board it's just
+  // the teams. Feeds the per-team nota (avg stars) shown across the formation.
+  const allPlayers = [...availablePlayers, ...teams.flatMap((t) => t.players)]
+  const balances = formationBalance(teams, allPlayers)
 
   return (
     <div className="flex w-full flex-col gap-4">
       {error && <p className="text-sm text-destructive">{error}</p>}
 
+      {phase === "method" && (
+        <div className="flex flex-col gap-4">
+          <p className="text-sm text-muted-foreground">Como você quer formar os times?</p>
+          <div className="flex flex-col gap-2">
+            {METHODS.map((method) => {
+              const selected = formationMethod === method.key
+              return (
+                <Card
+                  key={method.key}
+                  className={cn(
+                    "cursor-pointer transition-colors",
+                    selected ? "ring-2 ring-primary" : "hover:bg-muted/40"
+                  )}
+                  onClick={() => setFormationMethod(method.key)}
+                >
+                  <CardContent className="flex items-start gap-3 py-3">
+                    <span
+                      className={cn(
+                        "mt-0.5 flex size-5 shrink-0 items-center justify-center rounded-full border",
+                        selected ? "border-primary bg-primary text-primary-foreground" : "border-muted-foreground/40"
+                      )}
+                    >
+                      {selected && <Check className="size-3.5" />}
+                    </span>
+                    <div className="flex flex-col gap-0.5">
+                      <span className="font-medium">{method.title}</span>
+                      <span className="text-sm text-muted-foreground">{method.desc}</span>
+                    </div>
+                  </CardContent>
+                </Card>
+              )
+            })}
+          </div>
+
+          {formationMethod === "sorteio" && (
+            <div className="flex items-start justify-between gap-3 rounded-lg border p-3">
+              <div className="flex flex-col gap-0.5">
+                <Label htmlFor="balance-stars" className="text-sm">
+                  Equilibrar pelas estrelas
+                </Label>
+                <span className="text-xs text-muted-foreground">
+                  {balanceByStars
+                    ? "Distribui os jogadores para deixar as notas dos times o mais parelhas possível."
+                    : "Sorteio totalmente aleatório, sem olhar as estrelas."}
+                </span>
+              </div>
+              <Switch
+                id="balance-stars"
+                checked={balanceByStars}
+                onCheckedChange={setBalanceByStars}
+                className="mt-0.5 shrink-0"
+              />
+            </div>
+          )}
+
+          <Button size="touch" className="w-full" onClick={proceedToSetup}>
+            Continuar
+          </Button>
+        </div>
+      )}
+
       {phase === "setup" && (
         <div className="flex flex-col gap-4">
-          <p className="text-sm text-muted-foreground">
-            Escolha a cor de cada time. Depois o Time 1 escolhe primeiro (o primeiro jogador
-            escolhido vira o capitão), seguido pelo Time 2, e assim por diante até completar.
-          </p>
+          <div className="flex items-center justify-between gap-2">
+            <p className="text-sm text-muted-foreground">{SETUP_INTRO[formationMethod]}</p>
+            <button
+              type="button"
+              className="shrink-0 text-xs text-primary underline"
+              onClick={backToMethod}
+            >
+              Trocar método
+            </button>
+          </div>
           <div className="flex items-center justify-between gap-2 rounded-lg border p-3">
             <div className="flex flex-col">
               <span className="text-sm">
@@ -145,7 +301,7 @@ export function TeamFormationPage({
                     />
                   </div>
 
-                  {i === reserveTeamIndex && (
+                  {i === reserveTeamIndex && formationMethod === "alternado" && (
                     <div className="flex items-start justify-between gap-3 rounded-lg bg-muted/40 p-2.5">
                       <div className="flex flex-col gap-0.5">
                         <Label htmlFor="reserve-drafts" className="text-sm">
@@ -169,8 +325,8 @@ export function TeamFormationPage({
               </Card>
             ))}
           </div>
-          <Button size="touch" className="w-full" onClick={startDraft}>
-            Iniciar escolha de jogadores
+          <Button size="touch" className="w-full" onClick={startFormation}>
+            {START_LABEL[formationMethod]}
           </Button>
         </div>
       )}
@@ -178,25 +334,61 @@ export function TeamFormationPage({
       {phase === "draft" && (
         <div className="flex flex-col gap-4">
           <Card>
-            <CardHeader className="flex flex-row items-center justify-between gap-2">
-              <CardTitle className="flex items-center gap-2 text-base">
-                {availablePlayers.length > 0 ? (
-                  <>
-                    <span
-                      className="inline-block size-3 rounded-full border"
-                      style={{ backgroundColor: teams[currentTeamIndex]?.color }}
-                    />
-                    Vez do Time {teams[currentTeamIndex]?.number} escolher
-                    {teams[currentTeamIndex]?.players.length === 0 ? " (capitão)" : ""}
-                  </>
-                ) : (
-                  "Todos os jogadores foram escolhidos"
+            <CardHeader className="flex flex-col gap-2">
+              <div className="flex flex-row items-center justify-between gap-2">
+                <CardTitle className="flex items-center gap-2 text-base">
+                  {availablePlayers.length === 0 ? (
+                    "Todos os jogadores foram escolhidos"
+                  ) : formationMethod === "livre" ? (
+                    <>
+                      <span
+                        className="inline-block size-3 rounded-full border"
+                        style={{ backgroundColor: teams[currentTeamIndex]?.color }}
+                      />
+                      Montando o Time {teams[currentTeamIndex]?.number}
+                    </>
+                  ) : (
+                    <>
+                      <span
+                        className="inline-block size-3 rounded-full border"
+                        style={{ backgroundColor: teams[currentTeamIndex]?.color }}
+                      />
+                      Vez do Time {teams[currentTeamIndex]?.number} escolher
+                      {teams[currentTeamIndex]?.players.length === 0 ? " (capitão)" : ""}
+                    </>
+                  )}
+                </CardTitle>
+                {canUndoLastPick && (
+                  <Button variant="outline" size="sm" className="shrink-0" onClick={undoLastPick}>
+                    <Undo2 className="size-4" /> Corrigir
+                  </Button>
                 )}
-              </CardTitle>
-              {canUndoLastPick && (
-                <Button variant="outline" size="sm" className="shrink-0" onClick={undoLastPick}>
-                  <Undo2 className="size-4" /> Corrigir
-                </Button>
+              </div>
+              {formationMethod === "livre" && availablePlayers.length > 0 && (
+                <div className="flex flex-wrap gap-1.5">
+                  {teams.map((team, i) => {
+                    const full = team.players.length >= capacities[i]!
+                    const active = i === currentTeamIndex
+                    return (
+                      <button
+                        key={i}
+                        type="button"
+                        onClick={() => selectTeam(i)}
+                        className={cn(
+                          "flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs",
+                          active ? "border-primary bg-primary/10 font-medium" : "hover:bg-muted",
+                          full && !active && "opacity-50"
+                        )}
+                      >
+                        <span
+                          className="inline-block size-2.5 rounded-full border"
+                          style={{ backgroundColor: team.color }}
+                        />
+                        Time {team.number} ({team.players.length}/{capacities[i]})
+                      </button>
+                    )
+                  })}
+                </div>
               )}
             </CardHeader>
             <CardContent className="flex flex-col gap-2">
@@ -206,11 +398,14 @@ export function TeamFormationPage({
                     key={player.id}
                     type="button"
                     onClick={() => pickPlayer(player.id)}
-                    className="min-h-11 rounded-md border px-3 py-2 text-left text-base uppercase hover:bg-muted"
+                    className="flex min-h-11 items-center justify-between gap-2 rounded-md border px-3 py-2 text-left text-base uppercase hover:bg-muted"
                   >
-                    {player.name}
-                    {player.nickname ? ` (${player.nickname})` : ""}
-                    {player.position === "goleiro" ? " 🧤" : ""}
+                    <span className="flex-1">
+                      {player.name}
+                      {player.nickname ? ` (${player.nickname})` : ""}
+                      {player.position === "goleiro" ? " 🧤" : ""}
+                    </span>
+                    <PlayerRating value={player.skill_level} />
                   </button>
                 ))
               ) : (
@@ -236,10 +431,13 @@ export function TeamFormationPage({
                 captainId={team.captainId}
                 highlighted={i === currentTeamIndex}
                 subtitle={
-                  <p className="text-xs text-muted-foreground">
-                    {team.players.length}/{capacities[i]} vagas preenchidas
-                    {i === reserveTeamIndex ? " · reserva" : ""}
-                  </p>
+                  <div className="flex flex-col gap-1.5">
+                    <p className="text-xs text-muted-foreground">
+                      {team.players.length}/{capacities[i]} vagas preenchidas
+                      {i === reserveTeamIndex ? " · reserva" : ""}
+                    </p>
+                    <TeamBalanceBar balance={balances[i]!} />
+                  </div>
                 }
               />
             ))}
@@ -254,6 +452,11 @@ export function TeamFormationPage({
               Toque em um jogador e depois no time de destino para mover, ou arraste pela alça.
               Toque na estrela para trocar o capitão.
             </p>
+            {formationMethod === "sorteio" && (
+              <Button variant="secondary" size="touch" className="w-full" onClick={runSorteio}>
+                <RefreshCw className="size-4" /> Sortear de novo
+              </Button>
+            )}
             <div className="flex gap-2">
               <Button variant="outline" size="touch" className="flex-1" onClick={resetDraft}>
                 Refazer times
@@ -274,6 +477,7 @@ export function TeamFormationPage({
           <TeamsBoard
             teams={teams}
             playersPerTeam={playersPerTeam}
+            balances={balances}
             onMovePlayer={movePlayer}
             onSetCaptain={setCaptain}
             onSetColor={setTeamColor}
