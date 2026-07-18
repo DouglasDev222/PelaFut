@@ -120,6 +120,7 @@ export function useLiveMatch(matchId: string) {
   const [phase, setPhase] = useState<LivePhase>("not_started")
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [roundRecoveryNeeded, setRoundRecoveryNeeded] = useState(false)
   const hasLoadedRef = useRef(false)
 
   const load = useCallback(async () => {
@@ -129,6 +130,7 @@ export function useLiveMatch(matchId: string) {
     if (!hasLoadedRef.current) setLoading(true)
     hasLoadedRef.current = true
     setError(null)
+    setRoundRecoveryNeeded(false)
     setPendingTieOrder(null)
     setPendingTieDecision(null)
     setPendingDirectWinner(null)
@@ -198,7 +200,10 @@ export function useLiveMatch(matchId: string) {
     }
     const latestRound = roundRows?.[0]
     if (!latestRound || latestRound.status !== "in_progress") {
-      setError("Partida em andamento sem rodada ativa. Tente reiniciar a partida ao vivo.")
+      // In-progress match with no active round — a round rotation was
+      // interrupted (network error / closed tab mid-transition). Offer a
+      // recovery instead of a dead end.
+      setRoundRecoveryNeeded(true)
       setCurrentRound(null)
       setPendingBorrows([])
       setConflictWarnings([])
@@ -373,6 +378,44 @@ export function useLiveMatch(matchId: string) {
     if (statusError) {
       setError(statusError.message)
       return { error: statusError.message }
+    }
+    await load()
+    return { error: null }
+  }
+
+  /**
+   * Recovers an in-progress match that lost its active round (an interrupted
+   * round rotation). Starts a fresh round for the two teams at the front of the
+   * queue, with the next sequence — so the pelada resumes instead of getting
+   * stuck. Unlike startLiveMatch it doesn't assume sequence 1.
+   */
+  async function recoverActiveRound() {
+    if (!match || teams.length < 2) return { error: "É preciso de pelo menos 2 times" }
+    setError(null)
+    const { data: lastRounds, error: seqError } = await supabase
+      .from("match_rounds")
+      .select("sequence")
+      .eq("match_id", matchId)
+      .order("sequence", { ascending: false })
+      .limit(1)
+    if (seqError) {
+      setError(seqError.message)
+      return { error: seqError.message }
+    }
+    const nextSequence = ((lastRounds?.[0]?.sequence as number | undefined) ?? 0) + 1
+    const ordered = [...teams].sort((a, b) => a.queuePosition - b.queuePosition)
+    const [first, second] = ordered
+    const { error: insertError } = await supabase.from("match_rounds").insert({
+      match_id: matchId,
+      sequence: nextSequence,
+      home_team_id: first!.id,
+      away_team_id: second!.id,
+      status: "in_progress",
+      ...freshRoundTimestamps(),
+    })
+    if (insertError) {
+      setError(insertError.message)
+      return { error: insertError.message }
     }
     await load()
     return { error: null }
@@ -871,7 +914,9 @@ export function useLiveMatch(matchId: string) {
     phase,
     loading,
     error,
+    roundRecoveryNeeded,
     startLiveMatch,
+    recoverActiveRound,
     recordGoal,
     removeGoal,
     suggestedBorrowFor,

@@ -706,7 +706,9 @@ export function LiveMatchPage() {
     phase,
     loading,
     error,
+    roundRecoveryNeeded,
     startLiveMatch,
+    recoverActiveRound,
     recordGoal,
     removeGoal,
     suggestedBorrowFor,
@@ -820,6 +822,24 @@ export function LiveMatchPage() {
 
   if (!match) {
     return <p className="text-sm text-destructive">{error ?? "Pelada não encontrada"}</p>
+  }
+
+  if (roundRecoveryNeeded) {
+    return (
+      <div className="flex w-full flex-col gap-4">
+        {error && <p className="text-sm text-destructive">{error}</p>}
+        <EmptyState
+          icon={AlertTriangle}
+          title="Partida sem rodada ativa"
+          description="A troca de rodada foi interrompida. Toque abaixo para retomar a partida com os dois primeiros times da fila."
+          action={
+            <Button size="touch" disabled={busy} onClick={() => guarded(recoverActiveRound)}>
+              Retomar partida
+            </Button>
+          }
+        />
+      </div>
+    )
   }
 
   if (phase === "not_started") {
