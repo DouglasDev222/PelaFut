@@ -469,8 +469,8 @@ export function TeamFormationPage({
         <div className="flex flex-col gap-4">
           <div className="flex flex-col gap-3">
             <p className="text-sm text-muted-foreground">
-              Toque em um jogador e depois no time de destino para mover, ou arraste pela alça.
-              Toque na estrela para trocar o capitão.
+              Toque em um jogador e depois no time de destino para mover, ou segure o jogador
+              (0,5s) e arraste. Toque na estrela para trocar o capitão.
             </p>
             {formationMethod === "sorteio" && (
               <Button variant="secondary" size="touch" className="w-full" onClick={runSorteio}>

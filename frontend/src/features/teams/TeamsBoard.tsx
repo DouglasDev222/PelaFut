@@ -1,12 +1,15 @@
 import { useState } from "react"
 import {
   DndContext,
-  PointerSensor,
+  DragOverlay,
+  MouseSensor,
+  TouchSensor,
   useDraggable,
   useDroppable,
   useSensor,
   useSensors,
   type DragEndEvent,
+  type DragStartEvent,
 } from "@dnd-kit/core"
 import { GripVertical, Star } from "lucide-react"
 import type { Player } from "@pelafut/shared"
@@ -16,6 +19,12 @@ import { TeamBalanceBar } from "@/features/teams/TeamBalanceBar"
 import type { TeamBalance } from "@/features/teams/teamStrength"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { cn } from "@/lib/utils"
+
+function playerLabel(player: Player) {
+  return `${player.name}${player.nickname ? ` (${player.nickname})` : ""}${
+    player.position === "goleiro" ? " 🧤" : ""
+  }`
+}
 
 function PlayerChip({
   player,
@@ -32,21 +41,23 @@ function PlayerChip({
   onSetCaptain: () => void
   onToggleSelect: () => void
 }) {
-  const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({
+  // The whole chip is the drag handle: hold anywhere on it (see the sensors'
+  // activation constraints) to pick it up. A quick tap still hits the buttons
+  // inside, so tapping to select or set captain keeps working.
+  const { attributes, listeners, setNodeRef, isDragging } = useDraggable({
     id: `${teamIndex}:${player.id}`,
   })
 
   return (
     <div
       ref={setNodeRef}
-      style={
-        transform
-          ? { transform: `translate(${transform.x}px, ${transform.y}px)`, zIndex: 10 }
-          : undefined
-      }
+      {...listeners}
+      {...attributes}
+      aria-label={`Segurar para arrastar ${player.name}`}
       className={cn(
-        "flex items-center gap-1.5 rounded-md border bg-card py-1.5 pr-3 pl-1.5 text-sm select-none",
-        isDragging && "opacity-50",
+        "flex touch-manipulation items-center gap-1.5 rounded-md border bg-card py-1.5 pr-3 pl-1.5 text-sm select-none active:cursor-grabbing",
+        // Kept in place (just dimmed) while the DragOverlay shows the moving copy.
+        isDragging && "opacity-40",
         isSelected && "ring-2 ring-primary"
       )}
     >
@@ -58,21 +69,26 @@ function PlayerChip({
       >
         <Star className={cn("size-4", isCaptain ? "fill-primary text-primary" : "text-muted-foreground")} />
       </button>
-      <button
-        type="button"
-        onClick={onToggleSelect}
-        className="min-h-8 flex-1 text-left uppercase"
-      >
-        {player.name}
-        {player.nickname ? ` (${player.nickname})` : ""}
-        {player.position === "goleiro" ? " 🧤" : ""}
+      <button type="button" onClick={onToggleSelect} className="min-h-8 flex-1 text-left uppercase">
+        {playerLabel(player)}
       </button>
-      <span
-        {...listeners}
-        {...attributes}
-        aria-label="Arrastar jogador"
-        className="flex size-8 shrink-0 touch-none items-center justify-center text-muted-foreground active:cursor-grabbing"
-      >
+      <span className="flex size-8 shrink-0 items-center justify-center text-muted-foreground">
+        <GripVertical className="size-4" />
+      </span>
+    </div>
+  )
+}
+
+/** Static copy of a chip, rendered in the DragOverlay so it floats above every
+ * team card instead of being clipped behind sibling cards. */
+function PlayerChipOverlay({ player, isCaptain }: { player: Player; isCaptain: boolean }) {
+  return (
+    <div className="flex items-center gap-1.5 rounded-md border bg-card py-1.5 pr-3 pl-1.5 text-sm shadow-lg ring-2 ring-primary select-none">
+      <span className="flex size-8 shrink-0 items-center justify-center">
+        <Star className={cn("size-4", isCaptain ? "fill-primary text-primary" : "text-muted-foreground")} />
+      </span>
+      <span className="min-h-8 flex-1 self-center uppercase">{playerLabel(player)}</span>
+      <span className="flex size-8 shrink-0 items-center justify-center text-muted-foreground">
         <GripVertical className="size-4" />
       </span>
     </div>
@@ -164,9 +180,31 @@ export function TeamsBoard({
   onSetColor: (teamIndex: number, hex: string) => void
 }) {
   const [selected, setSelected] = useState<{ teamIndex: number; playerId: string } | null>(null)
-  const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 8 } }))
+  const [activeDrag, setActiveDrag] = useState<{ player: Player; isCaptain: boolean } | null>(null)
+  // Mouse drags instantly (8px), but touch requires a 0.5s hold so scrolling
+  // the page never picks a player up by accident. If a finger moves more than
+  // `tolerance` before the delay elapses, it's treated as a scroll, not a drag.
+  const sensors = useSensors(
+    useSensor(MouseSensor, { activationConstraint: { distance: 8 } }),
+    useSensor(TouchSensor, { activationConstraint: { delay: 500, tolerance: 8 } })
+  )
+
+  function findPlayer(id: string): { player: Player; teamIndex: number; isCaptain: boolean } | null {
+    const [fromIndexStr, playerId] = id.split(":")
+    const teamIndex = Number(fromIndexStr)
+    const team = teams[teamIndex]
+    const player = team?.players.find((p) => p.id === playerId)
+    if (!team || !player) return null
+    return { player, teamIndex, isCaptain: team.captainId === player.id }
+  }
+
+  function handleDragStart(event: DragStartEvent) {
+    const found = findPlayer(String(event.active.id))
+    if (found) setActiveDrag({ player: found.player, isCaptain: found.isCaptain })
+  }
 
   function handleDragEnd(event: DragEndEvent) {
+    setActiveDrag(null)
     const { active, over } = event
     if (!over) return
     const [fromIndexStr, playerId] = String(active.id).split(":")
@@ -191,10 +229,15 @@ export function TeamsBoard({
   return (
     <div className="flex flex-col gap-4">
       <p className="text-xs text-muted-foreground">
-        Toque no nome do jogador para selecionar e depois toque no time de destino — ou arraste
-        pela alça ⠿.
+        Toque no nome do jogador para selecionar e depois toque no time de destino — ou segure o
+        jogador (0,5s) e arraste.
       </p>
-      <DndContext sensors={sensors} onDragEnd={handleDragEnd}>
+      <DndContext
+        sensors={sensors}
+        onDragStart={handleDragStart}
+        onDragEnd={handleDragEnd}
+        onDragCancel={() => setActiveDrag(null)}
+      >
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
           {teams.map((team, i) => (
             <TeamColumn
@@ -211,6 +254,11 @@ export function TeamsBoard({
             />
           ))}
         </div>
+        <DragOverlay>
+          {activeDrag ? (
+            <PlayerChipOverlay player={activeDrag.player} isCaptain={activeDrag.isCaptain} />
+          ) : null}
+        </DragOverlay>
       </DndContext>
     </div>
   )
