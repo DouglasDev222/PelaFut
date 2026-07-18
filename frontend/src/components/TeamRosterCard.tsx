@@ -36,6 +36,12 @@ export function TeamRosterCard({
   const [open, setOpen] = useState(variant === "expanded")
   const showRoster = variant === "expanded" || open
 
+  // Captain always shows first in the roster.
+  const orderedPlayers =
+    captainId && players.some((p) => p.id === captainId)
+      ? [players.find((p) => p.id === captainId)!, ...players.filter((p) => p.id !== captainId)]
+      : players
+
   const header = (
     <CardTitle className="flex items-center gap-2 text-base">
       <span
@@ -62,7 +68,7 @@ export function TeamRosterCard({
       {showRoster && (
         <CardContent className="flex flex-col gap-1 text-sm">
           {players.length === 0 && <p className="text-muted-foreground">Nenhum jogador ainda.</p>}
-          {players.map((p) => (
+          {orderedPlayers.map((p) => (
             <p key={p.id} className="flex items-center gap-1">
               {p.id === captainId && <Star className="size-3.5 shrink-0 fill-primary text-primary" />}
               <span className="uppercase">

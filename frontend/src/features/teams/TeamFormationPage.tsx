@@ -44,6 +44,7 @@ export function TeamFormationPage({
     setTeamColor,
     startDraft,
     pickPlayer,
+    finishDraft,
     undoLastPick,
     movePlayer,
     setCaptain,
@@ -179,12 +180,18 @@ export function TeamFormationPage({
           <Card>
             <CardHeader className="flex flex-row items-center justify-between gap-2">
               <CardTitle className="flex items-center gap-2 text-base">
-                <span
-                  className="inline-block size-3 rounded-full border"
-                  style={{ backgroundColor: teams[currentTeamIndex]?.color }}
-                />
-                Vez do Time {teams[currentTeamIndex]?.number} escolher
-                {teams[currentTeamIndex]?.players.length === 0 ? " (capitão)" : ""}
+                {availablePlayers.length > 0 ? (
+                  <>
+                    <span
+                      className="inline-block size-3 rounded-full border"
+                      style={{ backgroundColor: teams[currentTeamIndex]?.color }}
+                    />
+                    Vez do Time {teams[currentTeamIndex]?.number} escolher
+                    {teams[currentTeamIndex]?.players.length === 0 ? " (capitão)" : ""}
+                  </>
+                ) : (
+                  "Todos os jogadores foram escolhidos"
+                )}
               </CardTitle>
               {canUndoLastPick && (
                 <Button variant="outline" size="sm" className="shrink-0" onClick={undoLastPick}>
@@ -193,18 +200,29 @@ export function TeamFormationPage({
               )}
             </CardHeader>
             <CardContent className="flex flex-col gap-2">
-              {availablePlayers.map((player) => (
-                <button
-                  key={player.id}
-                  type="button"
-                  onClick={() => pickPlayer(player.id)}
-                  className="min-h-11 rounded-md border px-3 py-2 text-left text-base uppercase hover:bg-muted"
-                >
-                  {player.name}
-                  {player.nickname ? ` (${player.nickname})` : ""}
-                  {player.position === "goleiro" ? " 🧤" : ""}
-                </button>
-              ))}
+              {availablePlayers.length > 0 ? (
+                availablePlayers.map((player) => (
+                  <button
+                    key={player.id}
+                    type="button"
+                    onClick={() => pickPlayer(player.id)}
+                    className="min-h-11 rounded-md border px-3 py-2 text-left text-base uppercase hover:bg-muted"
+                  >
+                    {player.name}
+                    {player.nickname ? ` (${player.nickname})` : ""}
+                    {player.position === "goleiro" ? " 🧤" : ""}
+                  </button>
+                ))
+              ) : (
+                <>
+                  <p className="text-sm text-muted-foreground">
+                    Confira os times abaixo e avance para ajustar (mover jogadores, trocar capitão) e salvar.
+                  </p>
+                  <Button size="touch" className="w-full" onClick={finishDraft}>
+                    Avançar
+                  </Button>
+                </>
+              )}
             </CardContent>
           </Card>
 

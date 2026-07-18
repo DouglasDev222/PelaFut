@@ -269,17 +269,22 @@ export function useTeamFormation(matchId: string) {
               : t
           )
         })
-        setPhase("done")
+        // Draft complete — don't auto-advance; the organizer reviews and confirms.
         return []
       }
 
-      if (remaining.length === 0) {
-        setPhase("done")
-      } else {
+      if (remaining.length > 0) {
         setCurrentTeamIndex(nextTeamIndex(updatedTeams, currentTeamIndex, capacityFor))
       }
+      // When remaining is empty the draft is done, but we stay on the draft
+      // screen so the organizer can double-check before confirming.
       return remaining
     })
+  }
+
+  /** Moves from the (completed) draft to the board once the organizer confirms. */
+  function finishDraft() {
+    setPhase("done")
   }
 
   /** Reverses the most recent pick, restoring the exact state before it. */
@@ -303,8 +308,15 @@ export function useTeamFormation(matchId: string) {
       const playerIdx = fromTeam.players.findIndex((p) => p.id === playerId)
       if (playerIdx === -1) return prev
       const [player] = fromTeam.players.splice(playerIdx, 1)
-      if (player) toTeam.players.push(player)
-      if (fromTeam.captainId === playerId) fromTeam.captainId = null
+      if (player) {
+        toTeam.players.push(player)
+        // An empty / captain-less destination makes the arriving player its captain.
+        toTeam.captainId = toTeam.captainId ?? player.id
+      }
+      // Moving the captain out promotes the next player in the list (or none if empty).
+      if (fromTeam.captainId === playerId) {
+        fromTeam.captainId = fromTeam.players[0]?.id ?? null
+      }
       return next
     })
   }
@@ -528,6 +540,7 @@ export function useTeamFormation(matchId: string) {
     setTeamColor,
     startDraft,
     pickPlayer,
+    finishDraft,
     undoLastPick,
     movePlayer,
     setCaptain,
