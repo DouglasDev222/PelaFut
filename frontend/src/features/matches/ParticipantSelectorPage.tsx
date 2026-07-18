@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react"
 import { useParams, useNavigate, useLocation } from "react-router-dom"
-import { Search, Settings2, Users } from "lucide-react"
+import { Pencil, Search, Settings2, Users } from "lucide-react"
 import type { Match, Player } from "@pelafut/shared"
 import { supabase } from "@/lib/supabaseClient"
 import { fetchMatch } from "@/features/matches/useMatches"
@@ -38,6 +38,66 @@ export function trimSelectionToMax(
     if (selected.has(p.id)) keep.add(p.id)
   }
   return keep
+}
+
+/**
+ * One selectable peladeiro. The toggle and the edit shortcut are siblings, not
+ * nested — a button inside a button would be invalid HTML and the inner one
+ * would swallow the toggle.
+ */
+function PlayerRow({
+  player,
+  checked,
+  onToggle,
+  onEdit,
+}: {
+  player: Player
+  checked: boolean
+  onToggle: () => void
+  onEdit: () => void
+}) {
+  return (
+    <div
+      className={cn(
+        "flex items-center gap-1 rounded-md border pr-1",
+        checked && "border-primary bg-primary/5"
+      )}
+    >
+      <button
+        type="button"
+        aria-pressed={checked}
+        onClick={onToggle}
+        className="flex min-h-16 flex-1 items-center gap-3 p-3 text-left text-base"
+      >
+        <PlayerAvatar
+          photoUrl={player.photo_url}
+          name={player.name}
+          size="size-10"
+          iconSize="size-4"
+        />
+        <span className="min-w-0 flex-1 truncate uppercase">
+          {player.name}
+          {player.nickname ? ` (${player.nickname})` : ""}
+        </span>
+        <span
+          className={cn(
+            "flex size-6 shrink-0 items-center justify-center rounded border-2",
+            checked ? "border-primary bg-primary text-primary-foreground" : "border-muted-foreground"
+          )}
+        >
+          {checked ? "✓" : ""}
+        </span>
+      </button>
+      <button
+        type="button"
+        aria-label={`Editar ${player.name}`}
+        onClick={onEdit}
+        className="flex size-10 shrink-0 items-center justify-center rounded-full text-muted-foreground hover:bg-muted"
+      >
+        <Pencil className="size-4" />
+      </button>
+    </div>
+  )
 }
 
 export function ParticipantSelectorPage({
@@ -148,6 +208,19 @@ export function ParticipantSelectorPage({
     navigate(`/players/new?returnTo=${encodeURIComponent(location.pathname)}`)
   }, [persist, navigate, location.pathname])
 
+  /** Saves first, so leaving to edit a peladeiro never loses the selection. */
+  async function handleEditPlayer(playerId: string) {
+    setSaving(true)
+    setError(null)
+    const { error } = await persist()
+    setSaving(false)
+    if (error) {
+      setError(error)
+      return
+    }
+    navigate(`/players/${playerId}/edit?returnTo=${encodeURIComponent(location.pathname)}`)
+  }
+
   // Expose the header shortcut through a stable wrapper that reads the latest
   // handler from a ref — passing `handleAddPlayer` directly would re-fire the
   // effect (and the parent's setState) on every keystroke.
@@ -181,6 +254,8 @@ export function ParticipantSelectorPage({
   if (loading || !match) return null
 
   const filtered = players.filter((p) => matchesSearch(p, search))
+  const chosen = filtered.filter((p) => selectedIds.has(p.id))
+  const availableToPick = filtered.filter((p) => !selectedIds.has(p.id))
 
   return (
     <div className="flex w-full flex-col gap-4">
@@ -228,37 +303,41 @@ export function ParticipantSelectorPage({
         />
       )}
 
-      <div className="flex flex-col gap-2">
-        {filtered.map((player) => {
-          const checked = selectedIds.has(player.id)
-          return (
-            <button
+      {/* Chosen players first, so it's obvious who's already in without
+          scanning the whole list for check marks. */}
+      {chosen.length > 0 && (
+        <div className="flex flex-col gap-2">
+          <p className="text-sm font-medium text-muted-foreground">
+            Escolhidos ({chosen.length}/{match.max_players})
+          </p>
+          {chosen.map((player) => (
+            <PlayerRow
               key={player.id}
-              type="button"
-              aria-pressed={checked}
-              onClick={() => toggle(player.id)}
-              className={cn(
-                "flex min-h-16 items-center gap-3 rounded-md border p-3 text-left text-base",
-                checked && "border-primary bg-primary/5"
-              )}
-            >
-              <PlayerAvatar photoUrl={player.photo_url} name={player.name} size="size-10" iconSize="size-4" />
-              <span className="flex-1 uppercase">
-                {player.name}
-                {player.nickname ? ` (${player.nickname})` : ""}
-              </span>
-              <span
-                className={cn(
-                  "flex size-6 shrink-0 items-center justify-center rounded border-2",
-                  checked ? "border-primary bg-primary text-primary-foreground" : "border-muted-foreground"
-                )}
-              >
-                {checked ? "✓" : ""}
-              </span>
-            </button>
-          )
-        })}
-      </div>
+              player={player}
+              checked
+              onToggle={() => toggle(player.id)}
+              onEdit={() => handleEditPlayer(player.id)}
+            />
+          ))}
+        </div>
+      )}
+
+      {availableToPick.length > 0 && (
+        <div className="flex flex-col gap-2">
+          <p className="text-sm font-medium text-muted-foreground">
+            Ainda não escolhidos ({availableToPick.length})
+          </p>
+          {availableToPick.map((player) => (
+            <PlayerRow
+              key={player.id}
+              player={player}
+              checked={false}
+              onToggle={() => toggle(player.id)}
+              onEdit={() => handleEditPlayer(player.id)}
+            />
+          ))}
+        </div>
+      )}
 
       <div className="sticky bottom-0 -mx-4 flex flex-col gap-2 border-t bg-background/95 p-4 backdrop-blur">
         {error && <p className="text-sm text-destructive">{error}</p>}
