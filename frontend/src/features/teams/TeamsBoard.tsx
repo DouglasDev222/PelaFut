@@ -11,6 +11,7 @@ import {
 import { GripVertical, Star } from "lucide-react"
 import type { Player } from "@pelafut/shared"
 import { captainFirst, type FormationTeam } from "@/features/teams/useTeamFormation"
+import { TeamColorSelect } from "@/features/teams/TeamColorSelect"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { cn } from "@/lib/utils"
 
@@ -84,6 +85,7 @@ function TeamColumn({
   onSetCaptain,
   onToggleSelect,
   onMoveSelectedHere,
+  onSetColor,
 }: {
   team: FormationTeam
   teamIndex: number
@@ -92,6 +94,7 @@ function TeamColumn({
   onSetCaptain: (teamIndex: number, playerId: string) => void
   onToggleSelect: (teamIndex: number, playerId: string) => void
   onMoveSelectedHere: (teamIndex: number) => void
+  onSetColor: (teamIndex: number, hex: string) => void
 }) {
   const { setNodeRef, isOver } = useDroppable({ id: `team-${teamIndex}` })
   const shortfall = playersPerTeam - team.players.length
@@ -102,16 +105,27 @@ function TeamColumn({
         className={selectedPlayerId ? "cursor-pointer" : undefined}
         onClick={selectedPlayerId ? () => onMoveSelectedHere(teamIndex) : undefined}
       >
-        <CardTitle className="flex items-center gap-2 text-base">
-          <span
-            className="inline-block size-3 rounded-full border"
-            style={{ backgroundColor: team.color }}
-          />
-          Time {team.number}
-          <span className="text-sm font-normal text-muted-foreground">
-            ({team.players.length})
-          </span>
-        </CardTitle>
+        <div className="flex items-center justify-between gap-2">
+          <CardTitle className="flex items-center gap-2 text-base">
+            <span
+              className="inline-block size-3 rounded-full border"
+              style={{ backgroundColor: team.color }}
+            />
+            Time {team.number}
+            <span className="text-sm font-normal text-muted-foreground">
+              ({team.players.length})
+            </span>
+          </CardTitle>
+          {/* Stop the header's move-player click from firing when tweaking color. */}
+          <div onClick={(e) => e.stopPropagation()}>
+            <TeamColorSelect
+              value={team.color}
+              onChange={(hex) => onSetColor(teamIndex, hex)}
+              size="sm"
+              className="w-28 shrink-0"
+            />
+          </div>
+        </div>
         {shortfall > 0 && (
           <p className="text-xs text-amber-600 dark:text-amber-500">
             Reserva: precisa pegar {shortfall} jogador{shortfall === 1 ? "" : "es"} emprestado
@@ -144,11 +158,13 @@ export function TeamsBoard({
   playersPerTeam,
   onMovePlayer,
   onSetCaptain,
+  onSetColor,
 }: {
   teams: FormationTeam[]
   playersPerTeam: number
   onMovePlayer: (playerId: string, fromTeamIndex: number, toTeamIndex: number) => void
   onSetCaptain: (teamIndex: number, playerId: string) => void
+  onSetColor: (teamIndex: number, hex: string) => void
 }) {
   const [selected, setSelected] = useState<{ teamIndex: number; playerId: string } | null>(null)
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 8 } }))
@@ -193,6 +209,7 @@ export function TeamsBoard({
               onSetCaptain={onSetCaptain}
               onToggleSelect={toggleSelect}
               onMoveSelectedHere={moveSelectedHere}
+              onSetColor={onSetColor}
             />
           ))}
         </div>

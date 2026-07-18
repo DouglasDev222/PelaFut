@@ -9,6 +9,13 @@ export const TEAM_COLORS = [
   { name: "Roxo", hex: "#9333ea" },
 ]
 
+/** "No color" — a transparent swatch, for teams that don't use a color bib. */
+export const NO_COLOR = { name: "Sem cor", hex: "transparent" }
+
+/** Colors offered in the picker (real colors + "Sem cor"). Defaults still only
+ * use TEAM_COLORS, so a team is never auto-assigned "no color". */
+export const PICKER_COLORS = [...TEAM_COLORS, NO_COLOR]
+
 export function colorForIndex(index: number) {
   return TEAM_COLORS[index % TEAM_COLORS.length]
 }

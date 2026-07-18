@@ -1288,12 +1288,12 @@ export function LiveMatchPage() {
             Encerrar jogo
           </Button>
 
-          <ConfirmHoldDialog
+          <ConfirmDialog
             open={endRoundConfirmOpen}
             title="Encerrar o jogo?"
-            description="Isso encerra esse jogo e passa pro próximo da fila. Segure o botão abaixo para confirmar."
-            confirmLabel="Segure para encerrar"
-            holdMs={1500}
+            description="Isso encerra esse jogo e passa pro próximo da fila."
+            confirmLabel="Encerrar jogo"
+            confirmVariant="destructive"
             onOpenChange={setEndRoundConfirmOpen}
             onConfirm={handleConfirmEndRound}
           />

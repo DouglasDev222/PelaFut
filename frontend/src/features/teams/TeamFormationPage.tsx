@@ -3,12 +3,11 @@ import { useParams, useNavigate } from "react-router-dom"
 import { Settings2, Undo2 } from "lucide-react"
 import { teamCapacity, useTeamFormation } from "@/features/teams/useTeamFormation"
 import { TeamsBoard } from "@/features/teams/TeamsBoard"
-import { TEAM_COLORS } from "@/features/teams/teamColors"
+import { TeamColorSelect } from "@/features/teams/TeamColorSelect"
 import { MatchQuickSettingsDialog } from "@/features/matches/MatchQuickSettingsDialog"
 import { ConfirmDialog } from "@/components/ui/confirm-dialog"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Switch } from "@/components/ui/switch"
 import { Label } from "@/components/ui/label"
 import { TeamRosterCard } from "@/components/TeamRosterCard"
@@ -138,35 +137,11 @@ export function TeamFormationPage({
                         {i === reserveTeamIndex ? " · reserva" : ""})
                       </span>
                     </span>
-                    <Select value={team.color} onValueChange={(hex) => setTeamColor(i, hex as string)}>
-                      <SelectTrigger className="w-36 shrink-0">
-                        <SelectValue>
-                          {(hex: string) => {
-                            const selected = TEAM_COLORS.find((c) => c.hex === hex)
-                            return (
-                              <>
-                                <span
-                                  className="inline-block size-4 shrink-0 rounded-full border"
-                                  style={{ backgroundColor: hex }}
-                                />
-                                {selected?.name ?? "Cor"}
-                              </>
-                            )
-                          }}
-                        </SelectValue>
-                      </SelectTrigger>
-                      <SelectContent>
-                        {TEAM_COLORS.map((c) => (
-                          <SelectItem key={c.hex} value={c.hex}>
-                            <span
-                              className="inline-block size-4 shrink-0 rounded-full border"
-                              style={{ backgroundColor: c.hex }}
-                            />
-                            {c.name}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
+                    <TeamColorSelect
+                      value={team.color}
+                      onChange={(hex) => setTeamColor(i, hex)}
+                      className="w-36 shrink-0"
+                    />
                   </div>
 
                   {i === reserveTeamIndex && (
@@ -283,6 +258,7 @@ export function TeamFormationPage({
             playersPerTeam={playersPerTeam}
             onMovePlayer={movePlayer}
             onSetCaptain={setCaptain}
+            onSetColor={setTeamColor}
           />
         </div>
       )}
