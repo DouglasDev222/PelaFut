@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react"
 import { useParams, useNavigate } from "react-router-dom"
-import { Check, RefreshCw, Settings2, Star, Undo2 } from "lucide-react"
+import { Check, RefreshCw, Repeat, Settings2, Star, Undo2 } from "lucide-react"
 import { teamCapacity, useTeamFormation, type FormationMethod } from "@/features/teams/useTeamFormation"
 import { TeamsBoard } from "@/features/teams/TeamsBoard"
 import { TeamColorSelect } from "@/features/teams/TeamColorSelect"
@@ -46,6 +46,18 @@ const START_LABEL: Record<FormationMethod, string> = {
   alternado: "Iniciar escolha de jogadores",
   livre: "Iniciar montagem",
   sorteio: "Sortear times",
+}
+
+const METHOD_TITLE: Record<FormationMethod, string> = {
+  alternado: "Alternado",
+  livre: "Livre",
+  sorteio: "Sorteio",
+}
+
+const METHOD_SHORT: Record<FormationMethod, string> = {
+  alternado: "Capitães revezam a escolha",
+  livre: "Um time por vez",
+  sorteio: "Distribuição automática",
 }
 
 /** Compact read-only rating shown next to a player in the pick list. */
@@ -249,15 +261,23 @@ export function TeamFormationPage({
 
       {phase === "setup" && (
         <div className="flex flex-col gap-4">
-          <div className="flex items-center justify-between gap-2">
-            <p className="text-sm text-muted-foreground">{SETUP_INTRO[formationMethod]}</p>
-            <button
-              type="button"
-              className="shrink-0 text-xs text-primary underline"
-              onClick={backToMethod}
-            >
-              Trocar método
-            </button>
+          <p className="text-sm text-muted-foreground">{SETUP_INTRO[formationMethod]}</p>
+          <div className="flex items-center justify-between gap-2 rounded-lg border p-3">
+            <div className="flex flex-col">
+              <span className="text-sm">
+                Método: <strong>{METHOD_TITLE[formationMethod]}</strong>
+              </span>
+              <span className="text-xs text-muted-foreground">
+                {formationMethod === "sorteio"
+                  ? balanceByStars
+                    ? "Equilibrado pelas estrelas"
+                    : "Sorteio aleatório"
+                  : METHOD_SHORT[formationMethod]}
+              </span>
+            </div>
+            <Button variant="outline" size="sm" className="shrink-0" onClick={backToMethod}>
+              <Repeat className="size-4" /> Alterar método
+            </Button>
           </div>
           <div className="flex items-center justify-between gap-2 rounded-lg border p-3">
             <div className="flex flex-col">
