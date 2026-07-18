@@ -11,7 +11,7 @@ import {
 import { GripVertical, Star } from "lucide-react"
 import type { Player } from "@pelafut/shared"
 import { captainFirst, type FormationTeam } from "@/features/teams/useTeamFormation"
-import { TeamColorSelect } from "@/features/teams/TeamColorSelect"
+import { TeamColorPicker } from "@/features/teams/TeamColorPicker"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { cn } from "@/lib/utils"
 
@@ -105,27 +105,17 @@ function TeamColumn({
         className={selectedPlayerId ? "cursor-pointer" : undefined}
         onClick={selectedPlayerId ? () => onMoveSelectedHere(teamIndex) : undefined}
       >
-        <div className="flex items-center justify-between gap-2">
-          <CardTitle className="flex items-center gap-2 text-base">
-            <span
-              className="inline-block size-3 rounded-full border"
-              style={{ backgroundColor: team.color }}
-            />
-            Time {team.number}
-            <span className="text-sm font-normal text-muted-foreground">
-              ({team.players.length})
-            </span>
-          </CardTitle>
-          {/* Stop the header's move-player click from firing when tweaking color. */}
-          <div onClick={(e) => e.stopPropagation()}>
-            <TeamColorSelect
-              value={team.color}
-              onChange={(hex) => onSetColor(teamIndex, hex)}
-              size="sm"
-              className="w-28 shrink-0"
-            />
-          </div>
-        </div>
+        <CardTitle className="flex items-center gap-1.5 text-base">
+          {/* The color dot is the picker trigger; stop the header's move-player
+              click from firing when changing color. */}
+          <span onClick={(e) => e.stopPropagation()}>
+            <TeamColorPicker value={team.color} onChange={(hex) => onSetColor(teamIndex, hex)} />
+          </span>
+          Time {team.number}
+          <span className="text-sm font-normal text-muted-foreground">
+            ({team.players.length})
+          </span>
+        </CardTitle>
         {shortfall > 0 && (
           <p className="text-xs text-amber-600 dark:text-amber-500">
             Reserva: precisa pegar {shortfall} jogador{shortfall === 1 ? "" : "es"} emprestado
