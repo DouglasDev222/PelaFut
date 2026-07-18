@@ -41,9 +41,12 @@ export function trimSelectionToMax(
 }
 
 /**
- * One selectable peladeiro. The toggle and the edit shortcut are siblings, not
- * nested — a button inside a button would be invalid HTML and the inner one
- * would swallow the toggle.
+ * One selectable peladeiro.
+ *
+ * Only the checkbox toggles the selection — tapping the card body does nothing.
+ * The whole row used to be the button, which made it easy to add or drop
+ * someone by accident while scrolling. The checkbox keeps a 44px hit area even
+ * though the drawn box is smaller.
  */
 function PlayerRow({
   player,
@@ -63,12 +66,7 @@ function PlayerRow({
         checked && "border-primary bg-primary/5"
       )}
     >
-      <button
-        type="button"
-        aria-pressed={checked}
-        onClick={onToggle}
-        className="flex min-h-16 flex-1 items-center gap-3 p-3 text-left text-base"
-      >
+      <div className="flex min-h-16 min-w-0 flex-1 items-center gap-3 p-3 text-base">
         <PlayerAvatar
           photoUrl={player.photo_url}
           name={player.name}
@@ -79,9 +77,18 @@ function PlayerRow({
           {player.name}
           {player.nickname ? ` (${player.nickname})` : ""}
         </span>
+      </div>
+      <button
+        type="button"
+        role="checkbox"
+        aria-checked={checked}
+        aria-label={`Selecionar ${player.name}`}
+        onClick={onToggle}
+        className="flex size-11 shrink-0 items-center justify-center"
+      >
         <span
           className={cn(
-            "flex size-6 shrink-0 items-center justify-center rounded border-2",
+            "flex size-6 items-center justify-center rounded border-2",
             checked ? "border-primary bg-primary text-primary-foreground" : "border-muted-foreground"
           )}
         >
@@ -301,6 +308,12 @@ export function ParticipantSelectorPage({
           title="Nenhum peladeiro encontrado"
           description={`Nada encontrado para "${search}".`}
         />
+      )}
+
+      {filtered.length > 0 && (
+        <p className="text-xs text-muted-foreground">
+          Toque na caixinha para escolher · no lápis para editar o peladeiro.
+        </p>
       )}
 
       {/* Chosen players first, so it's obvious who's already in without
