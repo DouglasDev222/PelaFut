@@ -249,7 +249,7 @@ export function TeamFormationPage({
                   if (!error) navigate(`/matches/${id}/live`, { replace: true })
                 }}
               >
-                {saving ? "Salvando..." : "Confirmar times"}
+                {saving ? "Salvando..." : "Salvar times"}
               </Button>
             </div>
           </div>

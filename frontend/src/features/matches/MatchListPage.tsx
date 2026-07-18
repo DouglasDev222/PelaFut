@@ -60,7 +60,7 @@ function actionsFor(match: Match): Record<ActionKey, { label: string; to: string
 const FEATURED_ACTION_KEYS: Record<MatchStatus, ActionKey[]> = {
   draft: ["participants", "teams"],
   teams_formed: ["teams", "live"],
-  in_progress: ["live"],
+  in_progress: ["teams", "live"],
   finished: ["stats"],
 }
 
