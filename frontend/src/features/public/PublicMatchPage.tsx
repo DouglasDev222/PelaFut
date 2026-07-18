@@ -28,6 +28,7 @@ export function PublicMatchPage() {
         goals={data.goals}
         playerStats={playerStats}
         playersById={data.playersById}
+        hrefForPlayer={(id) => `/pelada/${codigo}/jogador/${id}`}
       />
     </PublicShell>
   )

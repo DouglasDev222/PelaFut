@@ -791,6 +791,14 @@ export function useLiveMatch(matchId: string) {
   }
 
   async function finishMatch() {
+    // Guard in the hook, not just in the UI: closing the pelada with a round
+    // still running would strand that round's goals in an unfinished state.
+    if (currentRound) {
+      const message = "Encerre o jogo atual antes de encerrar a pelada."
+      setError(message)
+      return { error: message }
+    }
+
     const { error: statusError } = await supabase
       .from("matches")
       .update({ status: "finished" })

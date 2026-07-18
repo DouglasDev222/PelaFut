@@ -24,6 +24,7 @@ export function MatchStatsPage() {
         goals={goals}
         playerStats={playerStats}
         playersById={playersById}
+        hrefForPlayer={(playerId) => `/players/${playerId}/stats`}
       />
     </div>
   )

@@ -1,10 +1,16 @@
 import { useState } from "react"
 import { BrowserRouter, Routes, Route, Link, useParams, useNavigate } from "react-router-dom"
-import { CalendarDays, History, User, UserPlus, Users } from "lucide-react"
+import { CalendarDays, MoreVertical, User, UserPlus, Users } from "lucide-react"
 import { AuthProvider } from "@/features/auth/AuthProvider"
 import { ProtectedRoute } from "@/features/auth/ProtectedRoute"
 import { AppShell } from "@/components/layout/AppShell"
 import { ToastProvider } from "@/components/ui/toast"
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu"
 import { LoginForm } from "@/features/auth/LoginForm"
 import { SignupForm } from "@/features/auth/SignupForm"
 import { ForgotPasswordForm } from "@/features/auth/ForgotPasswordForm"
@@ -17,6 +23,7 @@ import { MatchFormPage } from "@/features/matches/MatchFormPage"
 import { ParticipantSelectorPage } from "@/features/matches/ParticipantSelectorPage"
 import { TeamFormationPage, type TeamFormationBackContext } from "@/features/teams/TeamFormationPage"
 import { LiveMatchPage } from "@/features/live/LiveMatchPage"
+import { MatchHistoryPage } from "@/features/live/MatchHistoryPage"
 import { MatchStatsPage } from "@/features/stats/MatchStatsPage"
 import { PlayerStatsPage } from "@/features/stats/PlayerStatsPage"
 import { GeneralStatsPage } from "@/features/stats/GeneralStatsPage"
@@ -116,22 +123,24 @@ function LiveMatchRoute() {
     <AppShell
       title="Partida ao vivo"
       headerActions={
-        <div className="flex shrink-0 items-center">
-          <Link
-            to={`/matches/${id}/teams`}
-            aria-label="Editar times"
+        /* Um menu só, para o cabeçalho não virar uma fileira de ícones. */
+        <DropdownMenu>
+          <DropdownMenuTrigger
+            aria-label="Mais ações da pelada"
             className="flex size-11 shrink-0 items-center justify-center rounded-full text-foreground hover:bg-muted"
           >
-            <Users className="size-5" />
-          </Link>
-          <Link
-            to={`/matches/${id}/stats`}
-            aria-label="Ver histórico de jogos dessa pelada"
-            className="flex size-11 shrink-0 items-center justify-center rounded-full text-foreground hover:bg-muted"
-          >
-            <History className="size-5" />
-          </Link>
-        </div>
+            <MoreVertical className="size-5" />
+          </DropdownMenuTrigger>
+          <DropdownMenuContent>
+            <DropdownMenuItem render={<Link to={`/matches/${id}/teams`} />}>Times</DropdownMenuItem>
+            <DropdownMenuItem render={<Link to={`/matches/${id}/jogos`} />}>
+              Histórico de jogos
+            </DropdownMenuItem>
+            <DropdownMenuItem render={<Link to={`/matches/${id}/stats`} />}>
+              Estatísticas
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
       }
     >
       <LiveMatchPage />
@@ -252,6 +261,16 @@ function App() {
             element={
               <ProtectedRoute>
                 <LiveMatchRoute />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/matches/:id/jogos"
+            element={
+              <ProtectedRoute>
+                <AppShell title="Histórico de jogos">
+                  <MatchHistoryPage />
+                </AppShell>
               </ProtectedRoute>
             }
           />

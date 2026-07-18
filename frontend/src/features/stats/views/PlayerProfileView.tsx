@@ -6,8 +6,7 @@ import type { MatchContribution } from "@/features/stats/usePlayerStats"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { StatusBadge } from "@/components/ui/status-badge"
 import { PlayerAvatar } from "@/components/PlayerAvatar"
-
-const STAR = "★"
+import { StarsDisplay } from "@/features/players/StarsDisplay"
 
 function Tile({ value, label }: { value: string | number; label: string }) {
   return (
@@ -50,10 +49,14 @@ export function PlayerProfileView({
               <StatusBadge label="Inativo" tone="neutral" className="normal-case" />
             )}
           </p>
-          <p className="text-sm text-muted-foreground">
-            {player.position === "goleiro" ? "Goleiro" : "Jogador"}
-            {player.shirt_number != null ? ` · #${player.shirt_number}` : ""}
-            {player.skill_level ? ` · ${STAR.repeat(player.skill_level)}` : ""}
+          <p className="flex items-center gap-1.5 text-sm text-muted-foreground">
+            <span>
+              {player.position === "goleiro" ? "Goleiro" : "Jogador"}
+              {player.shirt_number != null ? ` · #${player.shirt_number}` : ""}
+            </span>
+            {player.skill_level != null && (
+              <StarsDisplay value={player.skill_level} size="size-3.5" />
+            )}
           </p>
         </div>
       </div>

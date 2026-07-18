@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react"
 import { useParams, useNavigate } from "react-router-dom"
-import { Check, RefreshCw, Repeat, Settings2, Star, Undo2 } from "lucide-react"
+import { Check, RefreshCw, Repeat, Settings2, Undo2 } from "lucide-react"
 import { teamCapacity, useTeamFormation, type FormationMethod } from "@/features/teams/useTeamFormation"
 import { TeamsBoard } from "@/features/teams/TeamsBoard"
 import { TeamColorSelect } from "@/features/teams/TeamColorSelect"
@@ -13,6 +13,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Switch } from "@/components/ui/switch"
 import { Label } from "@/components/ui/label"
 import { TeamRosterCard } from "@/components/TeamRosterCard"
+import { StarsDisplay } from "@/features/players/StarsDisplay"
 import { cn } from "@/lib/utils"
 
 const METHODS: { key: FormationMethod; title: string; desc: string }[] = [
@@ -60,18 +61,14 @@ const METHOD_SHORT: Record<FormationMethod, string> = {
   sorteio: "Distribuição automática",
 }
 
-/** Compact read-only rating shown next to a player in the pick list. */
+/** Compact read-only rating shown next to a player in the pick list. Uses the
+ * shared display so half stars (3.5) render properly instead of being
+ * truncated by a whole-star loop. */
 function PlayerRating({ value }: { value: number | null }) {
-  if (!value) {
+  if (value == null) {
     return <span className="shrink-0 text-xs text-muted-foreground normal-case">sem nota</span>
   }
-  return (
-    <span className="flex shrink-0 items-center gap-0.5" aria-label={`Avaliação ${value} de 5`}>
-      {Array.from({ length: value }).map((_, i) => (
-        <Star key={i} className="size-3.5 fill-primary text-primary" />
-      ))}
-    </span>
-  )
+  return <StarsDisplay value={value} size="size-3.5" className="shrink-0" />
 }
 
 export interface TeamFormationBackContext {

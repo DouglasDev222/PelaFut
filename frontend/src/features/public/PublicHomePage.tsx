@@ -18,7 +18,7 @@ export function PublicHomePage() {
   const totalGols = summary.peladas.reduce((sum, p) => sum + p.gols, 0)
 
   return (
-    <PublicShell codigo={codigo!} titulo={summary.titulo}>
+    <PublicShell codigo={codigo!} titulo={summary.titulo} showBack={false}>
       {error && <p className="text-sm text-destructive">{error}</p>}
 
       {summary.peladas.length === 0 ? (

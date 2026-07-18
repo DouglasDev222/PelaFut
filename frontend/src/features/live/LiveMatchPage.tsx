@@ -15,6 +15,7 @@ import {
 import { elapsedSecondsFor } from "@/features/live/rotation"
 import { penaltyKickStakes, type PenaltyState } from "@/features/live/penalties"
 import { ScoreClock, type ClockState } from "@/features/live/ScoreClock"
+import { MatchFinishedSummary } from "@/features/live/MatchFinishedSummary"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Dialog, DialogPopup, DialogTitle } from "@/components/ui/dialog"
@@ -891,31 +892,13 @@ export function LiveMatchPage() {
   }
 
   if (phase === "finished") {
-    const finalOrder = [...teams].sort((a, b) => a.queuePosition - b.queuePosition)
     return (
-      <div className="flex w-full flex-col gap-4">
-        <div className="flex flex-col items-center gap-2 rounded-2xl border bg-card p-6 text-center">
-          <Trophy className="size-8 text-muted-foreground" />
-          <p className="font-medium">Pelada encerrada</p>
-          <p className="text-sm text-muted-foreground">Ordem final da fila abaixo.</p>
-        </div>
-        <div className="flex flex-col gap-2">
-          {finalOrder.map((t, i) => (
-            <TeamRosterCard
-              key={t.id}
-              variant="collapsible"
-              color={t.color}
-              number={t.number}
-              captainId={t.captainId}
-              players={t.players}
-              headerRight={<span className="text-xs text-muted-foreground">{i + 1}º</span>}
-            />
-          ))}
-        </div>
-        <Button size="touch" variant="outline" className="w-full" disabled={busy} onClick={() => guarded(reopenMatch)}>
-          Reabrir partida
-        </Button>
-      </div>
+      <MatchFinishedSummary
+        matchId={match.id}
+        teams={teams}
+        busy={busy}
+        onReopen={() => guarded(reopenMatch)}
+      />
     )
   }
 
@@ -1334,14 +1317,23 @@ export function LiveMatchPage() {
             ))}
           </div>
 
-          <button
-            type="button"
-            className="self-center text-xs text-muted-foreground underline"
-            disabled={busy}
-            onClick={() => setFinishConfirmOpen(true)}
-          >
-            Encerrar pelada
-          </button>
+          {/* A pelada can only close between games — otherwise the running
+              round's goals would be stranded. The hook enforces this too. */}
+          <div className="flex flex-col items-center gap-1">
+            <button
+              type="button"
+              className="text-xs text-muted-foreground underline disabled:no-underline disabled:opacity-50"
+              disabled={busy || !!currentRound}
+              onClick={() => setFinishConfirmOpen(true)}
+            >
+              Encerrar pelada
+            </button>
+            {currentRound && (
+              <p className="text-center text-xs text-muted-foreground">
+                Encerre o jogo atual para poder encerrar a pelada.
+              </p>
+            )}
+          </div>
 
           <ConfirmHoldDialog
             open={finishConfirmOpen}

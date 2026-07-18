@@ -1,4 +1,5 @@
 import { useRef, useState, type FormEvent } from "react"
+import { Camera, Image as ImageIcon } from "lucide-react"
 import { useNavigate } from "react-router-dom"
 import type { Player, PlayerInput, PlayerPosition } from "@pelafut/shared"
 import { useAuth } from "@/features/auth/AuthProvider"
@@ -46,7 +47,8 @@ export function PlayerForm({ initial, onSubmit, returnTo }: PlayerFormProps) {
   const [uploading, setUploading] = useState(false)
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const photoInputRef = useRef<HTMLInputElement>(null)
+  const cameraInputRef = useRef<HTMLInputElement>(null)
+  const galleryInputRef = useRef<HTMLInputElement>(null)
 
   async function handlePhotoChange(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0]
@@ -69,12 +71,20 @@ export function PlayerForm({ initial, onSubmit, returnTo }: PlayerFormProps) {
 
   function handleRemovePhoto() {
     setPhotoUrl("")
-    if (photoInputRef.current) photoInputRef.current.value = ""
+    // Clear both, otherwise re-picking the same file wouldn't fire onChange.
+    if (cameraInputRef.current) cameraInputRef.current.value = ""
+    if (galleryInputRef.current) galleryInputRef.current.value = ""
   }
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault()
     setError(null)
+    // The rating drives the balanced draw and the team nota, so it can't be
+    // left empty — on new players and when editing an old one without it.
+    if (skillLevel == null) {
+      setError("Escolha a avaliação em estrelas do peladeiro.")
+      return
+    }
     setSubmitting(true)
     const { error } = await onSubmit({
       name: name.toUpperCase(),
@@ -108,15 +118,29 @@ export function PlayerForm({ initial, onSubmit, returnTo }: PlayerFormProps) {
           <form id="player-form" className="flex flex-col gap-4" onSubmit={handleSubmit}>
           <div className="flex flex-col items-center gap-3">
             <PlayerAvatar photoUrl={photoUrl} name={name} size="size-24" iconSize="size-10" />
-            <div className="flex items-center gap-2">
+            {/* Two explicit buttons instead of one. With a single
+                `accept="image/*"` input the choice is left to the OS picker —
+                and on Android 13+ Chrome opens the system Photo Picker, which
+                is gallery-only and never offers the camera. `capture` forces
+                the camera, so each path gets its own input. */}
+            <div className="flex flex-wrap items-center justify-center gap-2">
               <Button
                 type="button"
                 variant="outline"
                 size="touch"
-                onClick={() => photoInputRef.current?.click()}
+                onClick={() => cameraInputRef.current?.click()}
                 disabled={uploading}
               >
-                {uploading ? "Enviando..." : photoUrl ? "Trocar foto" : "Adicionar foto"}
+                <Camera className="size-4" /> {uploading ? "Enviando..." : "Tirar foto"}
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                size="touch"
+                onClick={() => galleryInputRef.current?.click()}
+                disabled={uploading}
+              >
+                <ImageIcon className="size-4" /> Galeria
               </Button>
               {photoUrl && (
                 <Button
@@ -132,7 +156,17 @@ export function PlayerForm({ initial, onSubmit, returnTo }: PlayerFormProps) {
               )}
             </div>
             <input
-              ref={photoInputRef}
+              ref={cameraInputRef}
+              id="photo-camera"
+              type="file"
+              accept="image/*"
+              capture="environment"
+              className="hidden"
+              onChange={handlePhotoChange}
+              disabled={uploading}
+            />
+            <input
+              ref={galleryInputRef}
               id="photo"
               type="file"
               accept="image/*"
@@ -199,8 +233,13 @@ export function PlayerForm({ initial, onSubmit, returnTo }: PlayerFormProps) {
               </Select>
             </div>
             <div className="flex flex-col gap-2">
-              <Label>Nível</Label>
+              <Label>
+                Nível <span className="text-destructive">*</span>
+              </Label>
               <StarRating value={skillLevel} onChange={setSkillLevel} />
+              <span className="text-xs text-muted-foreground">
+                Toque uma vez para meia estrela, de novo para a estrela inteira.
+              </span>
             </div>
           </div>
 

@@ -1,4 +1,5 @@
 import { useState } from "react"
+import { Link } from "react-router-dom"
 import { ChevronDown } from "lucide-react"
 import type { Player } from "@pelafut/shared"
 import {
@@ -131,6 +132,7 @@ function RoundHistoryCard({
   goals,
   playersById,
   rosterFor,
+  hrefForPlayer,
 }: {
   round: StatsRound
   homeTeam: StatsTeam | undefined
@@ -138,6 +140,7 @@ function RoundHistoryCard({
   goals: GoalLite[]
   playersById: Map<string, Player>
   rosterFor: (teamId: string) => Player[]
+  hrefForPlayer?: (playerId: string) => string
 }) {
   const [showRoster, setShowRoster] = useState(false)
 
@@ -190,11 +193,21 @@ function RoundHistoryCard({
               <div key={team?.id ?? "?"} className="flex flex-col gap-0.5">
                 <TeamLabel team={team} />
                 {team &&
-                  rosterFor(team.id).map((p) => (
-                    <p key={p.id} className="text-muted-foreground uppercase">
-                      {p.name}
-                    </p>
-                  ))}
+                  rosterFor(team.id).map((p) =>
+                    hrefForPlayer ? (
+                      <Link
+                        key={p.id}
+                        to={hrefForPlayer(p.id)}
+                        className="text-muted-foreground uppercase underline"
+                      >
+                        {p.name}
+                      </Link>
+                    ) : (
+                      <p key={p.id} className="text-muted-foreground uppercase">
+                        {p.name}
+                      </p>
+                    )
+                  )}
               </div>
             ))}
           </div>
@@ -216,6 +229,7 @@ export function MatchStatsView({
   goals,
   playerStats,
   playersById,
+  hrefForPlayer,
 }: {
   matchName: string
   teams: StatsTeam[]
@@ -224,6 +238,8 @@ export function MatchStatsView({
   goals: GoalLite[]
   playerStats: PlayerStatLine[]
   playersById: Map<string, Player>
+  /** When given, player names become links to their profile. */
+  hrefForPlayer?: (playerId: string) => string
 }) {
   const [standingsSort, setStandingsSort] = useState<StandingsSort>("points")
 
@@ -450,7 +466,15 @@ export function MatchStatsView({
                       .sort((a, b) => b.goals - a.goals || b.assists - a.assists)
                       .map((s) => (
                         <tr key={s.playerId} className="border-t">
-                          <td className="py-1.5 pr-2">{playerName(playersById, s.playerId)}</td>
+                          <td className="py-1.5 pr-2">
+                            {hrefForPlayer ? (
+                              <Link to={hrefForPlayer(s.playerId)} className="underline">
+                                {playerName(playersById, s.playerId)}
+                              </Link>
+                            ) : (
+                              playerName(playersById, s.playerId)
+                            )}
+                          </td>
                           <td className="px-1 text-right tabular-nums">{s.roundsPlayed}</td>
                           <td className="px-1 text-right font-medium tabular-nums">{s.goals}</td>
                           <td className="px-1 text-right tabular-nums">{s.assists}</td>
@@ -486,6 +510,7 @@ export function MatchStatsView({
                 goals={goals.filter((g) => g.roundId === r.id)}
                 playersById={playersById}
                 rosterFor={(teamId) => rosterFor(r.id, teamId)}
+                hrefForPlayer={hrefForPlayer}
               />
             ))}
           </div>

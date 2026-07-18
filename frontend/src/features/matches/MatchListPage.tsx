@@ -14,6 +14,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 import { ConfirmDialog } from "@/components/ui/confirm-dialog"
+import { ShareButton } from "@/features/public/ShareButton"
 import { cn } from "@/lib/utils"
 
 function todayIso() {
@@ -190,6 +191,11 @@ function MatchCard({
               {action.label}
             </Link>
           ))}
+          {/* Only a finished pelada exists on the public page, so that's the
+              only card where sharing a link makes sense. */}
+          {match.status === "finished" && (
+            <ShareButton matchId={match.id} label="Compartilhar" className="flex-1" />
+          )}
         </div>
       </CardContent>
 

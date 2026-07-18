@@ -4,6 +4,7 @@ import { BarChart3, MoreVertical, Search, Users } from "lucide-react"
 import type { Player } from "@pelafut/shared"
 import { usePlayers } from "@/features/players/usePlayers"
 import { matchesSearch } from "@/features/players/searchPlayer"
+import { StarsDisplay } from "@/features/players/StarsDisplay"
 import { buttonVariants } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
@@ -19,8 +20,6 @@ import {
 } from "@/components/ui/dropdown-menu"
 import { ConfirmDialog } from "@/components/ui/confirm-dialog"
 import { cn } from "@/lib/utils"
-
-const STAR = "★"
 
 export function PlayerListPage() {
   const { players, loading, error, deletePlayer, updatePlayer } = usePlayers()
@@ -108,24 +107,35 @@ function PlayerCard({
 
   return (
     <Card>
-      <CardContent className="flex items-center gap-3 py-3">
+      <CardContent className="flex items-center gap-2.5 py-2">
         {/* Only the avatar/name area is the link, so the actions menu below
             stays a sibling — a <button> inside an <a> would be invalid HTML. */}
         <Link
           to={`/players/${player.id}/stats`}
-          className="flex min-w-0 flex-1 items-center gap-3"
+          className="flex min-w-0 flex-1 items-center gap-2.5"
         >
-          <PlayerAvatar photoUrl={player.photo_url} name={player.name} />
+          <PlayerAvatar
+            photoUrl={player.photo_url}
+            name={player.name}
+            size="size-9"
+            iconSize="size-4"
+          />
           <div className="min-w-0 flex-1">
-            <p className="flex items-center gap-2 font-medium uppercase">
-              {player.name}
-              {player.nickname ? ` (${player.nickname})` : ""}
+            <p className="flex items-center gap-2 text-sm font-medium uppercase">
+              <span className="truncate">
+                {player.name}
+                {player.nickname ? ` (${player.nickname})` : ""}
+              </span>
               {!player.active && <StatusBadge label="Inativo" tone="neutral" className="normal-case" />}
             </p>
-            <p className="text-sm text-muted-foreground">
-              {player.position === "goleiro" ? "Goleiro" : "Jogador"}
-              {player.shirt_number != null ? ` · #${player.shirt_number}` : ""}
-              {player.skill_level ? ` · ${STAR.repeat(player.skill_level)}` : ""}
+            <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
+              <span>
+                {player.position === "goleiro" ? "Goleiro" : "Jogador"}
+                {player.shirt_number != null ? ` · #${player.shirt_number}` : ""}
+              </span>
+              {player.skill_level != null && (
+                <StarsDisplay value={player.skill_level} size="size-3" />
+              )}
             </p>
           </div>
         </Link>
