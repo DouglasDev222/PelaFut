@@ -1,8 +1,9 @@
 import { useState } from "react"
 import { Link } from "react-router-dom"
-import { MoreVertical, Search, Users } from "lucide-react"
+import { BarChart3, MoreVertical, Search, Users } from "lucide-react"
 import type { Player } from "@pelafut/shared"
 import { usePlayers } from "@/features/players/usePlayers"
+import { matchesSearch } from "@/features/players/searchPlayer"
 import { buttonVariants } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
@@ -21,16 +22,6 @@ import { cn } from "@/lib/utils"
 
 const STAR = "★"
 
-function normalize(s: string) {
-  return s.trim().toLowerCase()
-}
-
-function matchesSearch(player: Player, query: string) {
-  const q = normalize(query)
-  if (!q) return true
-  return normalize(player.name).includes(q) || normalize(player.nickname ?? "").includes(q)
-}
-
 export function PlayerListPage() {
   const { players, loading, error, deletePlayer, updatePlayer } = usePlayers()
   const [search, setSearch] = useState("")
@@ -46,6 +37,21 @@ export function PlayerListPage() {
       </Link>
 
       {error && <p className="text-sm text-destructive">{error}</p>}
+
+      {players.length > 0 && (
+        <div className="flex items-center justify-between gap-2 rounded-lg border p-3">
+          <span className="text-sm">
+            <strong>{players.length}</strong> peladeiro{players.length === 1 ? "" : "s"}{" "}
+            cadastrado{players.length === 1 ? "" : "s"}
+          </span>
+          <Link
+            to="/players/stats"
+            className={cn(buttonVariants({ variant: "outline", size: "sm" }), "shrink-0")}
+          >
+            <BarChart3 className="size-4" /> Estatísticas gerais
+          </Link>
+        </div>
+      )}
 
       {players.length > 0 && (
         <div className="relative">
@@ -103,19 +109,26 @@ function PlayerCard({
   return (
     <Card>
       <CardContent className="flex items-center gap-3 py-3">
-        <PlayerAvatar photoUrl={player.photo_url} name={player.name} />
-        <div className="flex-1">
-          <p className="flex items-center gap-2 font-medium uppercase">
-            {player.name}
-            {player.nickname ? ` (${player.nickname})` : ""}
-            {!player.active && <StatusBadge label="Inativo" tone="neutral" className="normal-case" />}
-          </p>
-          <p className="text-sm text-muted-foreground">
-            {player.position === "goleiro" ? "Goleiro" : "Jogador"}
-            {player.shirt_number != null ? ` · #${player.shirt_number}` : ""}
-            {player.skill_level ? ` · ${STAR.repeat(player.skill_level)}` : ""}
-          </p>
-        </div>
+        {/* Only the avatar/name area is the link, so the actions menu below
+            stays a sibling — a <button> inside an <a> would be invalid HTML. */}
+        <Link
+          to={`/players/${player.id}/stats`}
+          className="flex min-w-0 flex-1 items-center gap-3"
+        >
+          <PlayerAvatar photoUrl={player.photo_url} name={player.name} />
+          <div className="min-w-0 flex-1">
+            <p className="flex items-center gap-2 font-medium uppercase">
+              {player.name}
+              {player.nickname ? ` (${player.nickname})` : ""}
+              {!player.active && <StatusBadge label="Inativo" tone="neutral" className="normal-case" />}
+            </p>
+            <p className="text-sm text-muted-foreground">
+              {player.position === "goleiro" ? "Goleiro" : "Jogador"}
+              {player.shirt_number != null ? ` · #${player.shirt_number}` : ""}
+              {player.skill_level ? ` · ${STAR.repeat(player.skill_level)}` : ""}
+            </p>
+          </div>
+        </Link>
         <DropdownMenu>
           <DropdownMenuTrigger
             aria-label="Mais ações"
@@ -124,7 +137,7 @@ function PlayerCard({
             <MoreVertical className="size-4" />
           </DropdownMenuTrigger>
           <DropdownMenuContent>
-            <DropdownMenuItem render={<Link to={`/players/${player.id}/stats`} />}>Estatísticas</DropdownMenuItem>
+            <DropdownMenuItem render={<Link to={`/players/${player.id}/stats`} />}>Perfil</DropdownMenuItem>
             <DropdownMenuItem render={<Link to={`/players/${player.id}/edit`} />}>Editar</DropdownMenuItem>
             <DropdownMenuItem onClick={onToggleActive}>
               {player.active ? "Inativar" : "Ativar"}

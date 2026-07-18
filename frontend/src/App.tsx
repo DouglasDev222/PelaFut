@@ -19,6 +19,11 @@ import { TeamFormationPage, type TeamFormationBackContext } from "@/features/tea
 import { LiveMatchPage } from "@/features/live/LiveMatchPage"
 import { MatchStatsPage } from "@/features/stats/MatchStatsPage"
 import { PlayerStatsPage } from "@/features/stats/PlayerStatsPage"
+import { GeneralStatsPage } from "@/features/stats/GeneralStatsPage"
+import { PublicHomePage } from "@/features/public/PublicHomePage"
+import { PublicGeneralPage } from "@/features/public/PublicGeneralPage"
+import { PublicMatchPage } from "@/features/public/PublicMatchPage"
+import { PublicPlayerPage } from "@/features/public/PublicPlayerPage"
 
 function HomePage() {
   const shortcuts = [
@@ -140,6 +145,12 @@ function App() {
     <AuthProvider>
       <BrowserRouter>
         <Routes>
+          {/* Área pública: sem login e sem AppShell. Fica antes das rotas
+              privadas e nunca é envolvida por ProtectedRoute. */}
+          <Route path="/pelada/:codigo" element={<PublicHomePage />} />
+          <Route path="/pelada/:codigo/geral" element={<PublicGeneralPage />} />
+          <Route path="/pelada/:codigo/jogo/:jogoId" element={<PublicMatchPage />} />
+          <Route path="/pelada/:codigo/jogador/:jogadorId" element={<PublicPlayerPage />} />
           <Route
             path="/"
             element={
@@ -255,10 +266,20 @@ function App() {
             }
           />
           <Route
+            path="/players/stats"
+            element={
+              <ProtectedRoute>
+                <AppShell title="Estatísticas gerais">
+                  <GeneralStatsPage />
+                </AppShell>
+              </ProtectedRoute>
+            }
+          />
+          <Route
             path="/players/:id/stats"
             element={
               <ProtectedRoute>
-                <AppShell title="Estatísticas">
+                <AppShell title="Perfil do peladeiro">
                   <PlayerStatsPage />
                 </AppShell>
               </ProtectedRoute>

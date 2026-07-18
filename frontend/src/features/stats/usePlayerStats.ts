@@ -1,7 +1,12 @@
 import { useCallback, useEffect, useState } from "react"
 import type { Player } from "@pelafut/shared"
 import { supabase } from "@/lib/supabaseClient"
-import { computePlayerStats, type PlayerStatLine } from "@/features/stats/aggregate"
+import {
+  computeAccountPlayerStats,
+  computePlayerStats,
+  type AccountPlayerLine,
+  type PlayerStatLine,
+} from "@/features/stats/aggregate"
 import { fetchStatsRawData } from "@/features/stats/fetchRaw"
 
 export interface MatchContribution {
@@ -15,9 +20,19 @@ function emptyLine(playerId: string): PlayerStatLine {
   return { playerId, roundsPlayed: 0, wins: 0, draws: 0, losses: 0, goals: 0, assists: 0 }
 }
 
+function emptyOverall(playerId: string): AccountPlayerLine {
+  return {
+    ...emptyLine(playerId),
+    matchesPlayed: 0,
+    participations: 0,
+    pointsPct: 0,
+    goalsPerGame: 0,
+  }
+}
+
 export function usePlayerStats(playerId: string) {
   const [player, setPlayer] = useState<Player | null>(null)
-  const [overall, setOverall] = useState<PlayerStatLine>(emptyLine(playerId))
+  const [overall, setOverall] = useState<AccountPlayerLine>(emptyOverall(playerId))
   const [byMatch, setByMatch] = useState<MatchContribution[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -45,8 +60,14 @@ export function usePlayerStats(playerId: string) {
       return
     }
 
-    const allStats = computePlayerStats(data.rounds, data.goals, data.participants)
-    setOverall(allStats.find((s) => s.playerId === playerId) ?? emptyLine(playerId))
+    const roundToMatch = new Map(data.statsRounds.map((r) => [r.id, r.matchId]))
+    const allStats = computeAccountPlayerStats(
+      data.rounds,
+      data.goals,
+      data.participants,
+      roundToMatch
+    )
+    setOverall(allStats.find((s) => s.playerId === playerId) ?? emptyOverall(playerId))
 
     const matchIds = new Set(
       data.statsRounds

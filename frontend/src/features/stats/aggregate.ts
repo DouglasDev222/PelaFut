@@ -34,6 +34,27 @@ export interface PlayerStatLine {
   assists: number
 }
 
+/** A finished round plus its score, which the standings need for goal difference. */
+export interface RoundScoreLite extends RoundLite {
+  homeScore: number
+  awayScore: number
+}
+
+export interface TeamStandingLine {
+  teamId: string
+  played: number
+  wins: number
+  draws: number
+  losses: number
+  goalsFor: number
+  goalsAgainst: number
+  goalDiff: number
+  points: number
+}
+
+const WIN_POINTS = 3
+const DRAW_POINTS = 1
+
 function outcomeFor(round: RoundLite, teamId: string): "win" | "draw" | "loss" {
   if (round.result === "tie") return "draw"
   if (round.result === "home_win") return teamId === round.homeTeamId ? "win" : "loss"
@@ -82,4 +103,138 @@ export function computePlayerStats(
   }
 
   return [...lines.values()]
+}
+
+/** A player's career line across every pelada, with the derived rates. */
+export interface AccountPlayerLine extends PlayerStatLine {
+  /** Distinct peladas the player appeared in — not the same as rounds played. */
+  matchesPlayed: number
+  /** Goals + assists: "took part in the goal". */
+  participations: number
+  /** Points won over points available, 0–100 (win 3 · draw 1). */
+  pointsPct: number
+  goalsPerGame: number
+}
+
+/**
+ * Career stats per player across all peladas: the same per-round aggregation as
+ * `computePlayerStats`, plus the rates the account-wide screen ranks by.
+ *
+ * `roundToMatch` maps a round to its pelada so distinct peladas can be counted
+ * (a player with 10 rounds spread over 2 peladas has `matchesPlayed` 2). Only
+ * finished rounds count, inherited from `computePlayerStats`.
+ */
+export function computeAccountPlayerStats(
+  rounds: RoundLite[],
+  goals: GoalLite[],
+  participants: ParticipantLite[],
+  roundToMatch: Map<string, string>
+): AccountPlayerLine[] {
+  const base = computePlayerStats(rounds, goals, participants)
+  const finishedRoundIds = new Set(
+    rounds.filter((r) => r.status === "finished").map((r) => r.id)
+  )
+
+  // Distinct peladas per player, counted only from finished rounds so it lines
+  // up with roundsPlayed.
+  const matchesByPlayer = new Map<string, Set<string>>()
+  for (const p of participants) {
+    if (!finishedRoundIds.has(p.roundId)) continue
+    const matchId = roundToMatch.get(p.roundId)
+    if (!matchId) continue
+    let set = matchesByPlayer.get(p.playerId)
+    if (!set) {
+      set = new Set()
+      matchesByPlayer.set(p.playerId, set)
+    }
+    set.add(matchId)
+  }
+
+  return base.map((line) => {
+    const available = line.roundsPlayed * WIN_POINTS
+    const earned = line.wins * WIN_POINTS + line.draws * DRAW_POINTS
+    return {
+      ...line,
+      matchesPlayed: matchesByPlayer.get(line.playerId)?.size ?? 0,
+      participations: line.goals + line.assists,
+      pointsPct: available > 0 ? (earned / available) * 100 : 0,
+      goalsPerGame: line.roundsPlayed > 0 ? line.goals / line.roundsPlayed : 0,
+    }
+  })
+}
+
+/**
+ * Standings for the teams of one pelada, from its finished rounds: games,
+ * W/D/L, goals for/against and points (3 for a win, 1 for a draw).
+ *
+ * `result` is the source of truth for the outcome — including a round decided
+ * on penalties, where the score alone would read as a draw. Only when it's
+ * missing do we fall back to comparing the goals.
+ *
+ * Sorted like a league table: points, then goal difference, then goals scored,
+ * then wins.
+ */
+export function computeTeamStandings(rounds: RoundScoreLite[]): TeamStandingLine[] {
+  const lines = new Map<string, TeamStandingLine>()
+
+  function lineFor(teamId: string): TeamStandingLine {
+    let line = lines.get(teamId)
+    if (!line) {
+      line = {
+        teamId,
+        played: 0,
+        wins: 0,
+        draws: 0,
+        losses: 0,
+        goalsFor: 0,
+        goalsAgainst: 0,
+        goalDiff: 0,
+        points: 0,
+      }
+      lines.set(teamId, line)
+    }
+    return line
+  }
+
+  for (const round of rounds) {
+    if (round.status !== "finished") continue
+
+    for (const teamId of [round.homeTeamId, round.awayTeamId]) {
+      const isHome = teamId === round.homeTeamId
+      const line = lineFor(teamId)
+      line.played += 1
+      line.goalsFor += isHome ? round.homeScore : round.awayScore
+      line.goalsAgainst += isHome ? round.awayScore : round.homeScore
+
+      const outcome = round.result
+        ? outcomeFor(round, teamId)
+        : round.homeScore === round.awayScore
+          ? "draw"
+          : (round.homeScore > round.awayScore) === isHome
+            ? "win"
+            : "loss"
+
+      if (outcome === "win") {
+        line.wins += 1
+        line.points += WIN_POINTS
+      } else if (outcome === "draw") {
+        line.draws += 1
+        line.points += DRAW_POINTS
+      } else {
+        line.losses += 1
+      }
+    }
+  }
+
+  for (const line of lines.values()) {
+    line.goalDiff = line.goalsFor - line.goalsAgainst
+  }
+
+  return [...lines.values()].sort(
+    (a, b) =>
+      b.points - a.points ||
+      b.goalDiff - a.goalDiff ||
+      b.goalsFor - a.goalsFor ||
+      b.wins - a.wins
+  )
 }
