@@ -704,6 +704,7 @@ export function LiveMatchPage() {
     defaultPenaltyBestOf,
     pendingTransition,
     canUndoLastRound,
+    canFinishMatch,
     phase,
     loading,
     error,
@@ -1317,18 +1318,19 @@ export function LiveMatchPage() {
             ))}
           </div>
 
-          {/* A pelada can only close between games — otherwise the running
-              round's goals would be stranded. The hook enforces this too. */}
+          {/* Blocked only while a game is actually underway (running, paused,
+              already with goals, or in penalties). A round that exists but was
+              never started doesn't block. Same flag the hook enforces. */}
           <div className="flex flex-col items-center gap-1">
             <button
               type="button"
               className="text-xs text-muted-foreground underline disabled:no-underline disabled:opacity-50"
-              disabled={busy || !!currentRound}
+              disabled={busy || !canFinishMatch}
               onClick={() => setFinishConfirmOpen(true)}
             >
               Encerrar pelada
             </button>
-            {currentRound && (
+            {!canFinishMatch && (
               <p className="text-center text-xs text-muted-foreground">
                 Encerre o jogo atual para poder encerrar a pelada.
               </p>

@@ -791,9 +791,11 @@ export function useLiveMatch(matchId: string) {
   }
 
   async function finishMatch() {
-    // Guard in the hook, not just in the UI: closing the pelada with a round
-    // still running would strand that round's goals in an unfinished state.
-    if (currentRound) {
+    // Guard in the hook, not just in the UI. Note it's about a round being
+    // *underway*, not merely existing — a fresh round sits paused at zero and
+    // waiting to start, and blocking on that made the pelada impossible to
+    // close at all.
+    if (!canFinishMatch) {
       const message = "Encerre o jogo atual antes de encerrar a pelada."
       setError(message)
       return { error: message }
@@ -810,6 +812,25 @@ export function useLiveMatch(matchId: string) {
     await load()
     return { error: null }
   }
+
+  /**
+   * A round only blocks closing the pelada once it's actually underway.
+   *
+   * `freshRoundTimestamps` creates a round paused at zero (`paused_at ===
+   * started_at`), so a round that exists but was never started leaves nothing
+   * to lose — the pelada can be closed. It IS underway when:
+   *  - the clock has run at all (running, or paused mid-game), or
+   *  - a goal was already recorded (covers goals-only peladas, which have no
+   *    clock to start), or
+   *  - a penalty shootout is deciding it.
+   */
+  const roundUnderway = Boolean(
+    currentRound &&
+      (penaltyShootout != null ||
+        currentRound.goals.length > 0 ||
+        currentRound.pausedAt !== currentRound.startedAt)
+  )
+  const canFinishMatch = !roundUnderway
 
   async function pauseTimer() {
     if (!currentRound || currentRound.pausedAt) return
@@ -919,6 +940,7 @@ export function useLiveMatch(matchId: string) {
     defaultPenaltyBestOf,
     pendingTransition,
     canUndoLastRound: !!undoSnapshot,
+    canFinishMatch,
     phase,
     loading,
     error,
