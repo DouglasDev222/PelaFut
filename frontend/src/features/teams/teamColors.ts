@@ -19,3 +19,25 @@ export const PICKER_COLORS = [...TEAM_COLORS, NO_COLOR]
 export function colorForIndex(index: number) {
   return TEAM_COLORS[index % TEAM_COLORS.length]
 }
+
+/**
+ * Black or white text, whichever reads better on `hex`. Uses the WCAG relative
+ * luminance so a yellow bib gets black text and a navy one gets white.
+ *
+ * "transparent" (the "sem cor" team) isn't a real fill, so callers should treat
+ * a null return as "no team color — fall back to the default button style".
+ */
+export function readableTextColor(hex: string | null | undefined): string | null {
+  if (!hex || hex === "transparent") return null
+  const m = /^#?([0-9a-f]{6})$/i.exec(hex.trim())
+  if (!m) return null
+  const int = parseInt(m[1], 16)
+  const r = (int >> 16) & 0xff
+  const g = (int >> 8) & 0xff
+  const b = int & 0xff
+  // YIQ perceived brightness — heavier on green, lighter on blue. More reliable
+  // than plain luminance for the borderline yellow bib, which lands right on a
+  // 0.5 luminance cutoff and can tip either way.
+  const brightness = (r * 299 + g * 587 + b * 114) / 1000
+  return brightness > 128 ? "#000000" : "#ffffff"
+}

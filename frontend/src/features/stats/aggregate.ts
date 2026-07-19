@@ -238,3 +238,87 @@ export function computeTeamStandings(rounds: RoundScoreLite[]): TeamStandingLine
       b.wins - a.wins
   )
 }
+
+export interface TeamPlayerLine {
+  playerId: string
+  goals: number
+  assists: number
+}
+
+export interface TeamPlayersStats {
+  teamId: string
+  /** Everyone who played for this team, sorted by goals then assists. */
+  players: TeamPlayerLine[]
+  /** All players tied at the team's top goal count (empty if nobody scored). */
+  topScorerIds: string[]
+  topScorerGoals: number
+  topAssisterIds: string[]
+  topAssisterAssists: number
+}
+
+/**
+ * Per-team, per-player goals and assists — the breakdown behind "o artilheiro
+ * e o garçom de cada time". A player is grouped under whichever team they
+ * played for; the same person on two teams (across different peladas, or a
+ * borrowed round) gets a separate line per team, on purpose.
+ *
+ * Goals and assists are attributed by the goal's own `teamId`, so a borrowed
+ * player's goal counts for the team they scored for, matching the standings.
+ * Roster membership comes from `participants`, so a player who played but
+ * never scored still appears with zeros.
+ */
+export function computeTeamPlayerStats(
+  rounds: RoundLite[],
+  goals: GoalLite[],
+  participants: ParticipantLite[]
+): TeamPlayersStats[] {
+  const roundsById = new Map(rounds.map((r) => [r.id, r] as const))
+  // teamId -> playerId -> line
+  const byTeam = new Map<string, Map<string, TeamPlayerLine>>()
+
+  function lineFor(teamId: string, playerId: string): TeamPlayerLine {
+    let team = byTeam.get(teamId)
+    if (!team) {
+      team = new Map()
+      byTeam.set(teamId, team)
+    }
+    let line = team.get(playerId)
+    if (!line) {
+      line = { playerId, goals: 0, assists: 0 }
+      team.set(playerId, line)
+    }
+    return line
+  }
+
+  for (const p of participants) {
+    const round = roundsById.get(p.roundId)
+    if (!round || round.status !== "finished") continue
+    lineFor(p.teamId, p.playerId) // ensure a zero line for players who played
+  }
+
+  for (const g of goals) {
+    const round = roundsById.get(g.roundId)
+    if (!round || round.status !== "finished") continue
+    if (g.playerId) lineFor(g.teamId, g.playerId).goals += 1
+    if (g.assistPlayerId) lineFor(g.teamId, g.assistPlayerId).assists += 1
+  }
+
+  const result: TeamPlayersStats[] = []
+  for (const [teamId, team] of byTeam) {
+    const players = [...team.values()].sort(
+      (a, b) => b.goals - a.goals || b.assists - a.assists
+    )
+    const topScorerGoals = players.reduce((max, p) => Math.max(max, p.goals), 0)
+    const topAssisterAssists = players.reduce((max, p) => Math.max(max, p.assists), 0)
+    result.push({
+      teamId,
+      players,
+      topScorerGoals,
+      topScorerIds: topScorerGoals > 0 ? players.filter((p) => p.goals === topScorerGoals).map((p) => p.playerId) : [],
+      topAssisterAssists,
+      topAssisterIds:
+        topAssisterAssists > 0 ? players.filter((p) => p.assists === topAssisterAssists).map((p) => p.playerId) : [],
+    })
+  }
+  return result
+}

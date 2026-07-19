@@ -3,6 +3,7 @@ import { Link } from "react-router-dom"
 import { ChevronDown } from "lucide-react"
 import type { Player } from "@pelafut/shared"
 import {
+  computeTeamPlayerStats,
   computeTeamStandings,
   type GoalLite,
   type ParticipantLite,
@@ -217,6 +218,85 @@ function RoundHistoryCard({
   )
 }
 
+/** One team's goals/assists breakdown: who its artilheiro and garçom are, and
+ * how many goals each player of the team scored. Shared by private and public. */
+function TeamBreakdownCard({
+  team,
+  players,
+  topScorerIds,
+  topScorerGoals,
+  topAssisterIds,
+  topAssisterAssists,
+  playersById,
+  hrefForPlayer,
+}: {
+  team: StatsTeam | undefined
+  players: { playerId: string; goals: number; assists: number }[]
+  topScorerIds: string[]
+  topScorerGoals: number
+  topAssisterIds: string[]
+  topAssisterAssists: number
+  playersById: Map<string, Player>
+  hrefForPlayer?: (playerId: string) => string
+}) {
+  const scored = players.filter((p) => p.goals > 0 || p.assists > 0)
+  function names(ids: string[]) {
+    return ids.map((id) => playerName(playersById, id)).join(", ")
+  }
+  return (
+    <div className="flex flex-col gap-2 rounded-lg border p-3">
+      <TeamLabel team={team} />
+      <div className="grid grid-cols-2 gap-2 text-xs">
+        <div className="flex flex-col">
+          <span className="text-muted-foreground">
+            ⚽ Artilheiro{topScorerIds.length === 1 ? "" : "s"}
+          </span>
+          <span className="font-medium">{topScorerIds.length > 0 ? names(topScorerIds) : "—"}</span>
+          {topScorerGoals > 0 && (
+            <span className="text-muted-foreground tabular-nums">
+              {topScorerGoals} {topScorerGoals === 1 ? "gol" : "gols"}
+            </span>
+          )}
+        </div>
+        <div className="flex flex-col">
+          <span className="text-muted-foreground">
+            🎯 Garçom{topAssisterIds.length === 1 ? "" : "s"}
+          </span>
+          <span className="font-medium">{topAssisterIds.length > 0 ? names(topAssisterIds) : "—"}</span>
+          {topAssisterAssists > 0 && (
+            <span className="text-muted-foreground tabular-nums">
+              {topAssisterAssists} {topAssisterAssists === 1 ? "assistência" : "assistências"}
+            </span>
+          )}
+        </div>
+      </div>
+
+      {scored.length > 0 && (
+        <div className="flex flex-col gap-0.5 border-t pt-2 text-sm">
+          {scored.map((p) => (
+            <div key={p.playerId} className="flex items-center justify-between gap-2">
+              <span className="truncate">
+                {hrefForPlayer ? (
+                  <Link to={hrefForPlayer(p.playerId)} className="underline">
+                    {playerName(playersById, p.playerId)}
+                  </Link>
+                ) : (
+                  playerName(playersById, p.playerId)
+                )}
+              </span>
+              <span className="shrink-0 text-xs text-muted-foreground tabular-nums">
+                {p.goals > 0 && `⚽ ${p.goals}`}
+                {p.goals > 0 && p.assists > 0 && " · "}
+                {p.assists > 0 && `🎯 ${p.assists}`}
+              </span>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
 /**
  * One pelada's statistics. Presentational: the caller supplies the already
  * loaded data, so the private app and the public page share this exact UI.
@@ -270,6 +350,11 @@ export function MatchStatsView({
   const teamsById = new Map(teams.map((t) => [t.id, t]))
   const goalsPerGame =
     finishedRounds.length > 0 ? (totalGoals / finishedRounds.length).toFixed(1) : "0.0"
+
+  // Per-team breakdown, kept in the teams' own order (Time 1, 2, 3…) so it
+  // lines up with how they're named everywhere else, not by rank.
+  const teamPlayerStats = computeTeamPlayerStats(rounds, goals, participants)
+  const teamStatsById = new Map(teamPlayerStats.map((t) => [t.teamId, t]))
 
   function rosterFor(roundId: string, teamId: string) {
     return participants
@@ -496,6 +581,30 @@ export function MatchStatsView({
                   ["D", "derrotas"],
                 ]}
               />
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-base">Por time</CardTitle>
+            </CardHeader>
+            <CardContent className="flex flex-col gap-3">
+              {teams.map((team) => {
+                const ts = teamStatsById.get(team.id)
+                return (
+                  <TeamBreakdownCard
+                    key={team.id}
+                    team={team}
+                    players={ts?.players ?? []}
+                    topScorerIds={ts?.topScorerIds ?? []}
+                    topScorerGoals={ts?.topScorerGoals ?? 0}
+                    topAssisterIds={ts?.topAssisterIds ?? []}
+                    topAssisterAssists={ts?.topAssisterAssists ?? 0}
+                    playersById={playersById}
+                    hrefForPlayer={hrefForPlayer}
+                  />
+                )
+              })}
             </CardContent>
           </Card>
 

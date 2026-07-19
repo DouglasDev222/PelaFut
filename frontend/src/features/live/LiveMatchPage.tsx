@@ -18,6 +18,8 @@ import { ScoreClock, type ClockState } from "@/features/live/ScoreClock"
 import { MatchFinishedSummary } from "@/features/live/MatchFinishedSummary"
 import { QueueEditorDialog } from "@/features/live/QueueEditorDialog"
 import { useGamesPlayed } from "@/features/live/useGamesPlayed"
+import { useMatchTeamPlayerStats } from "@/features/live/useMatchTeamPlayerStats"
+import { readableTextColor } from "@/features/teams/teamColors"
 import type { QueueState } from "@/features/live/queueEdit"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -42,6 +44,37 @@ function TeamBadge({ team }: { team: LiveTeam }) {
       <span className="inline-block size-3 rounded-full border" style={{ backgroundColor: team.color }} />
       Time {team.number}
     </span>
+  )
+}
+
+/**
+ * The "GOL TIME N" button, tinted to the team's own color so which button
+ * scores for which team reads at a glance. Falls back to the default primary
+ * style for the "sem cor" team (transparent) or an unparseable color, and
+ * while disabled — a tinted-but-dead button would look active.
+ */
+function GoalButton({
+  color,
+  number,
+  disabled,
+  onClick,
+}: {
+  color: string | null | undefined
+  number: number
+  disabled: boolean
+  onClick: () => void
+}) {
+  const textColor = disabled ? null : readableTextColor(color)
+  return (
+    <Button
+      size="touch"
+      className="w-full"
+      disabled={disabled}
+      onClick={onClick}
+      style={textColor ? { backgroundColor: color ?? undefined, color: textColor } : undefined}
+    >
+      GOL TIME {number}
+    </Button>
   )
 }
 
@@ -759,6 +792,7 @@ export function LiveMatchPage() {
   const [busy, setBusy] = useState(false)
   // Keyed on the current round so the counts move forward as games end.
   const gamesPlayed = useGamesPlayed(id!, true, currentRound?.id ?? null)
+  const teamPlayerStats = useMatchTeamPlayerStats(id!, currentRound?.id ?? null)
   const [, forceTick] = useState(0)
 
   useEffect(() => {
@@ -1186,16 +1220,15 @@ export function LiveMatchPage() {
                 number={homeTeam.number}
                 captainId={homeTeam.captainId}
                 players={onCourtPlayers(homeTeam.id)}
+                statsById={teamPlayerStats[homeTeam.id]}
                 footer={
                   <>
-                    <Button
-                      size="touch"
-                      className="w-full"
+                    <GoalButton
+                      color={homeTeam.color}
+                      number={homeTeam.number}
                       disabled={!canRecordGoals}
                       onClick={() => setScoringForTeam(currentRound.homeTeamId)}
-                    >
-                      GOL TIME {homeTeam.number}
-                    </Button>
+                    />
                     {homeGoals.map((g) => (
                       <GoalHistoryRow key={g.id} goal={g} playersById={allPlayersById} onOpen={setGoalActionsFor} />
                     ))}
@@ -1209,16 +1242,15 @@ export function LiveMatchPage() {
                 number={awayTeam.number}
                 captainId={awayTeam.captainId}
                 players={onCourtPlayers(awayTeam.id)}
+                statsById={teamPlayerStats[awayTeam.id]}
                 footer={
                   <>
-                    <Button
-                      size="touch"
-                      className="w-full"
+                    <GoalButton
+                      color={awayTeam.color}
+                      number={awayTeam.number}
                       disabled={!canRecordGoals}
                       onClick={() => setScoringForTeam(currentRound.awayTeamId)}
-                    >
-                      GOL TIME {awayTeam.number}
-                    </Button>
+                    />
                     {awayGoals.map((g) => (
                       <GoalHistoryRow key={g.id} goal={g} playersById={allPlayersById} onOpen={setGoalActionsFor} />
                     ))}
@@ -1367,6 +1399,7 @@ export function LiveMatchPage() {
                 number={t.number}
                 captainId={t.captainId}
                 players={t.players}
+                statsById={teamPlayerStats[t.id]}
                 headerRight={
                   <span className="text-xs text-muted-foreground">
                     {i + 1}º na fila · jogou {gamesPlayed[t.id] ?? 0}

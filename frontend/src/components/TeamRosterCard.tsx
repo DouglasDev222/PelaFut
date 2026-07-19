@@ -15,6 +15,7 @@ export function TeamRosterCard({
   number,
   players,
   captainId,
+  statsById,
   variant = "expanded",
   subtitle,
   headerRight,
@@ -26,6 +27,8 @@ export function TeamRosterCard({
   number: number | string
   players: TeamRosterPlayer[]
   captainId?: string | null
+  /** Optional per-player goals/assists — shows a small "⚽2 🅰️1" badge per name. */
+  statsById?: Record<string, { goals: number; assists: number }>
   variant?: "expanded" | "collapsible"
   subtitle?: ReactNode
   headerRight?: ReactNode
@@ -68,16 +71,26 @@ export function TeamRosterCard({
       {showRoster && (
         <CardContent className="flex flex-col gap-1 text-sm">
           {players.length === 0 && <p className="text-muted-foreground">Nenhum jogador ainda.</p>}
-          {orderedPlayers.map((p) => (
-            <p key={p.id} className="flex items-center gap-1">
-              {p.id === captainId && <Star className="size-3.5 shrink-0 fill-primary text-primary" />}
-              <span className="uppercase">
-                {p.name}
-                {p.nickname ? ` (${p.nickname})` : ""}
-              </span>
-              {p.position === "goleiro" ? " 🧤" : ""}
-            </p>
-          ))}
+          {orderedPlayers.map((p) => {
+            const s = statsById?.[p.id]
+            return (
+              <p key={p.id} className="flex items-center gap-1">
+                {p.id === captainId && <Star className="size-3.5 shrink-0 fill-primary text-primary" />}
+                <span className="uppercase">
+                  {p.name}
+                  {p.nickname ? ` (${p.nickname})` : ""}
+                </span>
+                {p.position === "goleiro" ? " 🧤" : ""}
+                {s && (s.goals > 0 || s.assists > 0) && (
+                  <span className="ml-auto shrink-0 text-xs text-muted-foreground tabular-nums">
+                    {s.goals > 0 && `⚽${s.goals}`}
+                    {s.goals > 0 && s.assists > 0 && " "}
+                    {s.assists > 0 && `🎯${s.assists}`}
+                  </span>
+                )}
+              </p>
+            )
+          })}
         </CardContent>
       )}
       {showRoster && footer && (
