@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react"
 import { useParams } from "react-router-dom"
-import { AlertTriangle, ListOrdered, Trophy, Undo2 } from "lucide-react"
+import { AlertTriangle, ListOrdered, Minus, Plus, Trophy, Undo2 } from "lucide-react"
 import type { Player } from "@pelafut/shared"
 import {
   useLiveMatch,
@@ -23,7 +23,6 @@ import { readableTextColor } from "@/features/teams/teamColors"
 import type { QueueState } from "@/features/live/queueEdit"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import { Input } from "@/components/ui/input"
 import { Dialog, DialogPopup, DialogTitle } from "@/components/ui/dialog"
 import { ConfirmDialog } from "@/components/ui/confirm-dialog"
 import { EmptyState } from "@/components/ui/empty-state"
@@ -91,6 +90,45 @@ function GoalButton({
  * current time so a small correction is a couple of taps. Always leaves the
  * clock paused (the hook does), so the operator starts it when ready.
  */
+function ClockStepper({
+  label,
+  value,
+  onStep,
+  step,
+}: {
+  label: string
+  value: number
+  onStep: (delta: number) => void
+  step: number
+}) {
+  return (
+    <div className="flex flex-col items-center gap-2">
+      <span className="text-xs font-medium text-muted-foreground">{label}</span>
+      <div className="flex flex-col items-center gap-2">
+        <button
+          type="button"
+          aria-label={`Aumentar ${label.toLowerCase()}`}
+          onClick={() => onStep(step)}
+          className="flex size-11 items-center justify-center rounded-full border bg-muted text-foreground active:scale-95 hover:bg-muted/70"
+        >
+          <Plus className="size-5" />
+        </button>
+        <span className="w-16 text-center font-mono text-4xl leading-none font-bold tabular-nums">
+          {String(value).padStart(2, "0")}
+        </span>
+        <button
+          type="button"
+          aria-label={`Diminuir ${label.toLowerCase()}`}
+          onClick={() => onStep(-step)}
+          className="flex size-11 items-center justify-center rounded-full border bg-muted text-foreground active:scale-95 hover:bg-muted/70"
+        >
+          <Minus className="size-5" />
+        </button>
+      </div>
+    </div>
+  )
+}
+
 function ClockEditDialog({
   open,
   onOpenChange,
@@ -102,21 +140,19 @@ function ClockEditDialog({
   initialSeconds: number
   onSave: (seconds: number) => void
 }) {
-  const [minutes, setMinutes] = useState("0")
-  const [seconds, setSeconds] = useState("0")
+  const [minutes, setMinutes] = useState(0)
+  const [seconds, setSeconds] = useState(0)
 
   useEffect(() => {
     if (open) {
       const total = Math.max(0, Math.floor(initialSeconds))
-      setMinutes(String(Math.floor(total / 60)))
-      setSeconds(String(total % 60))
+      setMinutes(Math.floor(total / 60))
+      setSeconds(total % 60)
     }
   }, [open, initialSeconds])
 
   function save() {
-    const m = Math.max(0, Math.floor(Number(minutes) || 0))
-    const s = Math.min(59, Math.max(0, Math.floor(Number(seconds) || 0)))
-    onSave(m * 60 + s)
+    onSave(minutes * 60 + seconds)
   }
 
   return (
@@ -124,34 +160,23 @@ function ClockEditDialog({
       <DialogPopup>
         <DialogTitle>Ajustar o cronômetro</DialogTitle>
         <p className="-mt-2 text-sm text-muted-foreground">
-          Defina o tempo e toque em salvar — o cronômetro fica pausado nesse valor, pronto para você
-          continuar quando quiser.
+          Toque nos botões para ajustar o tempo — o cronômetro fica pausado nesse valor, pronto para
+          você continuar quando quiser.
         </p>
-        <div className="flex items-end justify-center gap-2">
-          <label className="flex flex-col items-center gap-1 text-xs text-muted-foreground">
-            Minutos
-            <Input
-              type="number"
-              min={0}
-              inputMode="numeric"
-              value={minutes}
-              onChange={(e) => setMinutes(e.target.value)}
-              className="w-20 text-center text-lg tabular-nums"
-            />
-          </label>
-          <span className="pb-2 text-2xl font-bold text-muted-foreground">:</span>
-          <label className="flex flex-col items-center gap-1 text-xs text-muted-foreground">
-            Segundos
-            <Input
-              type="number"
-              min={0}
-              max={59}
-              inputMode="numeric"
-              value={seconds}
-              onChange={(e) => setSeconds(e.target.value)}
-              className="w-20 text-center text-lg tabular-nums"
-            />
-          </label>
+        <div className="flex items-center justify-center gap-3 py-2">
+          <ClockStepper
+            label="Minutos"
+            value={minutes}
+            step={1}
+            onStep={(d) => setMinutes((m) => Math.min(99, Math.max(0, m + d)))}
+          />
+          <span className="text-3xl font-bold text-muted-foreground">:</span>
+          <ClockStepper
+            label="Segundos"
+            value={seconds}
+            step={5}
+            onStep={(d) => setSeconds((s) => Math.min(55, Math.max(0, s + d)))}
+          />
         </div>
         <div className="flex gap-2">
           <Button variant="outline" size="touch" className="flex-1" onClick={() => onOpenChange(false)}>
@@ -1251,7 +1276,7 @@ export function LiveMatchPage() {
             awayScore={awayGoals.length}
             clockLabel={clockLabel}
             clockState={clockState}
-            onEditClock={hasTimer ? () => setClockEditOpen(true) : undefined}
+            onEditClock={hasTimer && !running ? () => setClockEditOpen(true) : undefined}
           />
 
           {hasTimer && (
