@@ -1227,7 +1227,6 @@ export function LiveMatchPage() {
                 number={homeTeam.number}
                 captainId={homeTeam.captainId}
                 players={onCourtPlayers(homeTeam.id)}
-                statsById={teamPlayerStats[homeTeam.id]}
                 footer={
                   <>
                     <GoalButton
@@ -1249,7 +1248,6 @@ export function LiveMatchPage() {
                 number={awayTeam.number}
                 captainId={awayTeam.captainId}
                 players={onCourtPlayers(awayTeam.id)}
-                statsById={teamPlayerStats[awayTeam.id]}
                 footer={
                   <>
                     <GoalButton
