@@ -10,47 +10,12 @@ import {
 } from "@dnd-kit/core"
 import { SortableContext, useSortable, verticalListSortingStrategy } from "@dnd-kit/sortable"
 import { ArrowLeftRight, GripVertical } from "lucide-react"
-import { supabase } from "@/lib/supabaseClient"
 import type { LiveTeam } from "@/features/live/useLiveMatch"
 import { planQueueEdit, reorderWaiting, swapOnCourt, type QueueState } from "@/features/live/queueEdit"
 import { Button } from "@/components/ui/button"
 import { Dialog, DialogPopup, DialogTitle } from "@/components/ui/dialog"
 import { ConfirmDialog } from "@/components/ui/confirm-dialog"
 import { cn } from "@/lib/utils"
-
-/**
- * How many finished games each team has already played. Not a rule the app
- * enforces — it's what lets the organizer see who has been waiting longest
- * before pushing someone further back.
- */
-function useGamesPlayed(matchId: string, enabled: boolean) {
-  const [counts, setCounts] = useState<Record<string, number>>({})
-
-  useEffect(() => {
-    if (!enabled) return
-    let cancelled = false
-    async function loadCounts() {
-      const { data } = await supabase
-        .from("match_rounds")
-        .select("home_team_id, away_team_id")
-        .eq("match_id", matchId)
-        .eq("status", "finished")
-      if (cancelled) return
-      const next: Record<string, number> = {}
-      for (const row of (data ?? []) as { home_team_id: string; away_team_id: string }[]) {
-        next[row.home_team_id] = (next[row.home_team_id] ?? 0) + 1
-        next[row.away_team_id] = (next[row.away_team_id] ?? 0) + 1
-      }
-      setCounts(next)
-    }
-    loadCounts()
-    return () => {
-      cancelled = true
-    }
-  }, [matchId, enabled])
-
-  return counts
-}
 
 function TeamLine({ team, games }: { team: LiveTeam | undefined; games: number }) {
   if (!team) return null
@@ -107,9 +72,9 @@ function SortableQueueRow({
 export function QueueEditorDialog({
   open,
   onOpenChange,
-  matchId,
   teams,
   initial,
+  games,
   roundUnderway,
   goalCount,
   clockLabel,
@@ -118,9 +83,10 @@ export function QueueEditorDialog({
 }: {
   open: boolean
   onOpenChange: (open: boolean) => void
-  matchId: string
   teams: LiveTeam[]
   initial: QueueState
+  /** Finished games per team id — the "who has been waiting longest" cue. */
+  games: Record<string, number>
   /** True when the current game already has something to lose (clock, goals, penalties). */
   roundUnderway: boolean
   goalCount: number
@@ -131,7 +97,6 @@ export function QueueEditorDialog({
   const [draft, setDraft] = useState<QueueState>(initial)
   const [swapFor, setSwapFor] = useState<string | null>(null)
   const [confirmOpen, setConfirmOpen] = useState(false)
-  const games = useGamesPlayed(matchId, open)
 
   // Reopening always starts from the queue as it currently stands, never from
   // a half-finished edit left over from last time.

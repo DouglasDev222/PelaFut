@@ -17,6 +17,7 @@ import { penaltyKickStakes, type PenaltyState } from "@/features/live/penalties"
 import { ScoreClock, type ClockState } from "@/features/live/ScoreClock"
 import { MatchFinishedSummary } from "@/features/live/MatchFinishedSummary"
 import { QueueEditorDialog } from "@/features/live/QueueEditorDialog"
+import { useGamesPlayed } from "@/features/live/useGamesPlayed"
 import type { QueueState } from "@/features/live/queueEdit"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -756,6 +757,8 @@ export function LiveMatchPage() {
   const [finishConfirmOpen, setFinishConfirmOpen] = useState(false)
   const [queueEditorOpen, setQueueEditorOpen] = useState(false)
   const [busy, setBusy] = useState(false)
+  // Keyed on the current round so the counts move forward as games end.
+  const gamesPlayed = useGamesPlayed(id!, true, currentRound?.id ?? null)
   const [, forceTick] = useState(0)
 
   useEffect(() => {
@@ -1364,7 +1367,11 @@ export function LiveMatchPage() {
                 number={t.number}
                 captainId={t.captainId}
                 players={t.players}
-                headerRight={<span className="text-xs text-muted-foreground">{i + 1}º na fila</span>}
+                headerRight={
+                  <span className="text-xs text-muted-foreground">
+                    {i + 1}º na fila · jogou {gamesPlayed[t.id] ?? 0}
+                  </span>
+                }
               />
             ))}
           </div>
@@ -1401,9 +1408,9 @@ export function LiveMatchPage() {
             <QueueEditorDialog
               open={queueEditorOpen}
               onOpenChange={setQueueEditorOpen}
-              matchId={match.id}
               teams={teams}
               initial={queueInitialState}
+              games={gamesPlayed}
               roundUnderway={roundUnderway}
               goalCount={currentRound?.goals.length ?? 0}
               clockLabel={hasTimer && !neverStarted ? formatClock(elapsed) : null}
