@@ -71,7 +71,14 @@ function GoalButton({
       className="w-full"
       disabled={disabled}
       onClick={onClick}
-      style={textColor ? { backgroundColor: color ?? undefined, color: textColor } : undefined}
+      // A thin border in the button's own text color (white on a dark fill,
+      // black on a light one) gives it a defined edge — without it the black
+      // team's button melts into the dark interface.
+      style={
+        textColor
+          ? { backgroundColor: color ?? undefined, color: textColor, border: `1px solid ${textColor}` }
+          : undefined
+      }
     >
       GOL TIME {number}
     </Button>
