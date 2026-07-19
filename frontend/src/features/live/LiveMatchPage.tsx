@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react"
 import { useParams } from "react-router-dom"
-import { AlertTriangle, ListOrdered, Pencil, Trophy, Undo2 } from "lucide-react"
+import { AlertTriangle, ListOrdered, Trophy, Undo2 } from "lucide-react"
 import type { Player } from "@pelafut/shared"
 import {
   useLiveMatch,
@@ -1251,6 +1251,7 @@ export function LiveMatchPage() {
             awayScore={awayGoals.length}
             clockLabel={clockLabel}
             clockState={clockState}
+            onEditClock={hasTimer ? () => setClockEditOpen(true) : undefined}
           />
 
           {hasTimer && (
@@ -1290,14 +1291,6 @@ export function LiveMatchPage() {
                   Inicie o cronômetro para poder registrar gols.
                 </p>
               )}
-              <button
-                type="button"
-                className="flex items-center justify-center gap-1.5 self-center text-xs text-muted-foreground underline"
-                disabled={busy}
-                onClick={() => setClockEditOpen(true)}
-              >
-                <Pencil className="size-3.5" /> Ajustar tempo
-              </button>
             </>
           )}
 

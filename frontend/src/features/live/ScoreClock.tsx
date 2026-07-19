@@ -1,3 +1,4 @@
+import { Pencil } from "lucide-react"
 import { cn } from "@/lib/utils"
 
 export type ClockState = "not_started" | "running" | "paused" | "stoppage" | "finished"
@@ -35,6 +36,7 @@ export function ScoreClock({
   awayScore,
   clockLabel,
   clockState,
+  onEditClock,
 }: {
   home: TeamSide | undefined
   away: TeamSide | undefined
@@ -42,6 +44,8 @@ export function ScoreClock({
   awayScore: number
   clockLabel?: string
   clockState?: ClockState
+  /** When set, a subtle pencil beside the time opens the clock editor. */
+  onEditClock?: () => void
 }) {
   return (
     <div className="flex flex-col items-center gap-4 rounded-2xl border bg-card p-5 sm:p-6">
@@ -53,7 +57,19 @@ export function ScoreClock({
 
       {clockLabel && clockState && (
         <div className="flex flex-col items-center gap-1">
-          <span className="font-mono text-3xl leading-none font-bold tabular-nums">{clockLabel}</span>
+          <div className="relative flex items-center">
+            <span className="font-mono text-3xl leading-none font-bold tabular-nums">{clockLabel}</span>
+            {onEditClock && (
+              <button
+                type="button"
+                onClick={onEditClock}
+                aria-label="Ajustar o cronômetro"
+                className="absolute left-full ml-2 flex size-7 items-center justify-center rounded-full text-muted-foreground/70 hover:bg-muted hover:text-foreground"
+              >
+                <Pencil className="size-3.5" />
+              </button>
+            )}
+          </div>
           <span className={cn("flex items-center gap-1.5 text-xs font-medium", CLOCK_STATE_CLASS[clockState])}>
             {clockState === "running" && (
               <span className="relative flex size-1.5">
