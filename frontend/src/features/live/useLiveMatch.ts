@@ -149,6 +149,11 @@ export function useLiveMatch(matchId: string) {
       return
     }
     setMatch(matchData as Match)
+    // Restore the "undo the last round" snapshot persisted on the match row, so
+    // the button survives a refresh / navigating away instead of vanishing.
+    setUndoSnapshot(
+      ((matchData as { last_round_undo?: UndoSnapshot | null }).last_round_undo as UndoSnapshot | null) ?? null
+    )
 
     const { data: teamsData, error: teamsError } = await supabase
       .from("teams")
@@ -613,6 +618,18 @@ export function useLiveMatch(matchId: string) {
     return outcome
   }
 
+  /**
+   * Records (or clears) the "undo the last round" snapshot in BOTH local state
+   * and the match row, so the "Voltar para o jogo anterior" button survives a
+   * refresh or navigating away — it used to live only in memory and vanished on
+   * remount. Best-effort on the DB write: a rotation that already happened must
+   * not be aborted just because the safety-net snapshot failed to persist.
+   */
+  async function persistUndoSnapshot(snapshot: UndoSnapshot | null) {
+    setUndoSnapshot(snapshot)
+    await supabase.from("matches").update({ last_round_undo: snapshot }).eq("id", matchId)
+  }
+
   async function finalizeRound(
     result: RoundResult,
     tieLastTeamId?: string,
@@ -682,7 +699,7 @@ export function useLiveMatch(matchId: string) {
         setError(carryOverError)
         return { error: carryOverError }
       }
-      setUndoSnapshot({ finishedRoundId, newRoundId: newRound.id as string, previousQueuePositions })
+      await persistUndoSnapshot({ finishedRoundId, newRoundId: newRound.id as string, previousQueuePositions })
       await load()
       return { error: null, result }
     }
@@ -726,7 +743,7 @@ export function useLiveMatch(matchId: string) {
       return { error: carryOverError }
     }
 
-    setUndoSnapshot({ finishedRoundId, newRoundId: newRound.id as string, previousQueuePositions })
+    await persistUndoSnapshot({ finishedRoundId, newRoundId: newRound.id as string, previousQueuePositions })
 
     const beforeIds = new Set([currentRound.homeTeamId, currentRound.awayTeamId])
     const afterIds = new Set([outcome.nextHomeTeamId, outcome.nextAwayTeamId])
@@ -786,7 +803,7 @@ export function useLiveMatch(matchId: string) {
       }
     }
 
-    setUndoSnapshot(null)
+    await persistUndoSnapshot(null)
     await load()
     return { error: null }
   }
@@ -910,7 +927,7 @@ export function useLiveMatch(matchId: string) {
 
     // The edit invalidates the "undo the last round" snapshot: it was taken
     // against a queue that no longer exists.
-    setUndoSnapshot(null)
+    await persistUndoSnapshot(null)
     await load()
     return { error: null }
   }

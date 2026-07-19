@@ -10,6 +10,10 @@ lerna-debug.log*
 node_modules
 dist
 dist-ssr
+# Local deploy build + its extractions. Left un-ignored, an extraction that
+# holds its assets directly (not under a nested dist/) gets scanned by Tailwind
+# and bloats the production CSS with junk class names.
+pelafut-dist*
 *.local
 
 # Editor directories and files
