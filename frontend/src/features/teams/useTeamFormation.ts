@@ -423,6 +423,34 @@ export function useTeamFormation(matchId: string) {
     })
   }
 
+  /**
+   * Reorders the teams, renumbering them by their new position (Time 1, Time
+   * 2...). The whole team moves — roster, color and captain — so it keeps its
+   * identity and only changes number.
+   *
+   * Only offered before the pelada starts (see `canReorderTeams`): `save`
+   * writes each team by index into `teams.position`, so once rounds exist and
+   * reference team ids, moving rosters between those ids would rewrite the
+   * history that already happened.
+   */
+  function moveTeam(fromIndex: number, toIndex: number) {
+    if (fromIndex === toIndex) return
+    setTeams((prev) => {
+      if (fromIndex < 0 || toIndex < 0 || fromIndex >= prev.length || toIndex >= prev.length) {
+        return prev
+      }
+      const next = [...prev]
+      const [moved] = next.splice(fromIndex, 1)
+      if (!moved) return prev
+      next.splice(toIndex, 0, moved)
+      return next.map((t, i) => ({ ...t, number: i + 1 }))
+    })
+  }
+
+  // A pelada that's already running (or done) has rounds pointing at team ids —
+  // renumbering there would corrupt the history, so the option isn't offered.
+  const canReorderTeams = matchStatus !== "in_progress" && matchStatus !== "finished"
+
   function setCaptain(teamIndex: number, playerId: string) {
     setTeams((prev) =>
       prev.map((t, i) => (i === teamIndex ? { ...t, captainId: playerId } : t))
@@ -513,11 +541,21 @@ export function useTeamFormation(matchId: string) {
       const t = teams[i]!
       const captainId = t.players.some((p) => p.id === t.captainId) ? t.captainId : null
       const prevId = existingByPos.get(i)
+      // Before the pelada starts, the queue simply follows the numbering, so a
+      // reorder has to move it too — otherwise a stale queue_position would
+      // make the fila disagree with the numbers on screen. Once it's live the
+      // queue has a life of its own (it rotates by result) and stays untouched.
+      const queueFields = canReorderTeams ? { queue_position: i } : {}
       if (prevId) {
-        // Keeps the team's id and queue_position untouched.
+        // Keeps the team's id untouched.
         const { error: updError } = await supabase
           .from("teams")
-          .update({ name: `Time ${t.number}`, color: t.color, captain_player_id: captainId })
+          .update({
+            name: `Time ${t.number}`,
+            color: t.color,
+            captain_player_id: captainId,
+            ...queueFields,
+          })
           .eq("id", prevId)
         if (updError) {
           setError(updError.message)
@@ -541,6 +579,7 @@ export function useTeamFormation(matchId: string) {
             color: t.color,
             position: i,
             captain_player_id: captainId,
+            ...queueFields,
           })
           .select("id")
           .single()
@@ -656,6 +695,8 @@ export function useTeamFormation(matchId: string) {
     finishDraft,
     undoLastPick,
     movePlayer,
+    moveTeam,
+    canReorderTeams,
     setCaptain,
     backToSetup,
     resetDraft,

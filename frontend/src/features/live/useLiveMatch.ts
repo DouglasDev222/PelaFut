@@ -9,6 +9,7 @@ import {
   type RotationTeam,
 } from "@/features/live/rotation"
 import { regulationKicksFor, resolvePenaltyShootout, type PenaltyKick, type PenaltyState } from "@/features/live/penalties"
+import { planQueueEdit, type QueueEditPlan, type QueueState } from "@/features/live/queueEdit"
 
 export interface LiveTeam {
   id: string
@@ -790,6 +791,130 @@ export function useLiveMatch(matchId: string) {
     return { error: null }
   }
 
+  /** The queue as it stands right now — the starting point for a manual edit. */
+  function currentQueueState(): QueueState | null {
+    if (!currentRound) return null
+    return {
+      homeTeamId: currentRound.homeTeamId,
+      awayTeamId: currentRound.awayTeamId,
+      waitingIds: teams
+        .filter((t) => t.id !== currentRound.homeTeamId && t.id !== currentRound.awayTeamId)
+        .sort((a, b) => a.queuePosition - b.queuePosition)
+        .map((t) => t.id),
+    }
+  }
+
+  /**
+   * Applies a manual queue edit (see `queueEdit.ts` for the invariant that
+   * keeps it fair). Order matters here: wipe what the edit invalidates first,
+   * then move the teams, then write the new order — so an interrupted run
+   * never leaves a round pointing at a team whose data was already cleared.
+   */
+  async function applyQueueEdit(draft: QueueState) {
+    if (!currentRound) return { error: "Nenhuma rodada ativa" }
+    const current = currentQueueState()
+    if (!current) return { error: "Nenhuma rodada ativa" }
+
+    let plan: QueueEditPlan
+    try {
+      plan = planQueueEdit(current, draft)
+    } catch (planError) {
+      const message = planError instanceof Error ? planError.message : "Fila inválida"
+      setError(message)
+      return { error: message }
+    }
+    if (!plan.changed) return { error: null }
+    setError(null)
+
+    if (plan.resetsCurrentRound) {
+      // A team left the court mid-game: its goals can't be kept (they'd be
+      // credited to whoever came in) and there's no partial state worth
+      // salvaging, so the round goes back to a clean zero.
+      const { error: goalsError } = await supabase
+        .from("match_round_goals")
+        .delete()
+        .eq("round_id", currentRound.id)
+      if (goalsError) {
+        setError(goalsError.message)
+        return { error: goalsError.message }
+      }
+      const { error: kicksError } = await supabase
+        .from("match_round_penalty_kicks")
+        .delete()
+        .eq("round_id", currentRound.id)
+      if (kicksError) {
+        setError(kicksError.message)
+        return { error: kicksError.message }
+      }
+      const { error: clockError } = await supabase
+        .from("match_rounds")
+        .update({ ...freshRoundTimestamps(), paused_seconds: 0 })
+        .eq("id", currentRound.id)
+      if (clockError) {
+        setError(clockError.message)
+        return { error: clockError.message }
+      }
+      setPenaltyShootout(null)
+    }
+
+    // Loans follow the teams. A team that left takes its borrowed players with
+    // it; and a team that just came in can't have its own players still on loan
+    // to the side it's now facing.
+    for (const teamId of plan.teamsLeavingCourt) {
+      const { error: borrowError } = await supabase
+        .from("match_round_borrowed_players")
+        .delete()
+        .eq("round_id", currentRound.id)
+        .eq("team_id", teamId)
+      if (borrowError) {
+        setError(borrowError.message)
+        return { error: borrowError.message }
+      }
+    }
+    for (const teamId of plan.teamsEnteringCourt) {
+      const { error: borrowError } = await supabase
+        .from("match_round_borrowed_players")
+        .delete()
+        .eq("round_id", currentRound.id)
+        .eq("borrowed_from_team_id", teamId)
+      if (borrowError) {
+        setError(borrowError.message)
+        return { error: borrowError.message }
+      }
+    }
+
+    if (plan.roundTeams) {
+      const { error: roundError } = await supabase
+        .from("match_rounds")
+        .update({
+          home_team_id: plan.roundTeams.homeTeamId,
+          away_team_id: plan.roundTeams.awayTeamId,
+        })
+        .eq("id", currentRound.id)
+      if (roundError) {
+        setError(roundError.message)
+        return { error: roundError.message }
+      }
+    }
+
+    for (const { teamId, queuePosition } of plan.queuePositions) {
+      const { error: posError } = await supabase
+        .from("teams")
+        .update({ queue_position: queuePosition })
+        .eq("id", teamId)
+      if (posError) {
+        setError(posError.message)
+        return { error: posError.message }
+      }
+    }
+
+    // The edit invalidates the "undo the last round" snapshot: it was taken
+    // against a queue that no longer exists.
+    setUndoSnapshot(null)
+    await load()
+    return { error: null }
+  }
+
   async function finishMatch() {
     // Guard in the hook, not just in the UI. Note it's about a round being
     // *underway*, not merely existing — a fresh round sits paused at zero and
@@ -941,6 +1066,9 @@ export function useLiveMatch(matchId: string) {
     pendingTransition,
     canUndoLastRound: !!undoSnapshot,
     canFinishMatch,
+    roundUnderway,
+    currentQueueState,
+    applyQueueEdit,
     phase,
     loading,
     error,

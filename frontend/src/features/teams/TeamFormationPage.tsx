@@ -1,8 +1,9 @@
 import { useEffect, useState } from "react"
 import { useParams, useNavigate } from "react-router-dom"
-import { Check, RefreshCw, Repeat, Settings2, Undo2 } from "lucide-react"
+import { ArrowUpDown, Check, RefreshCw, Repeat, Settings2, Undo2 } from "lucide-react"
 import { teamCapacity, useTeamFormation, type FormationMethod } from "@/features/teams/useTeamFormation"
 import { TeamsBoard } from "@/features/teams/TeamsBoard"
+import { TeamOrderEditor } from "@/features/teams/TeamOrderEditor"
 import { TeamColorSelect } from "@/features/teams/TeamColorSelect"
 import { TeamBalanceBar } from "@/features/teams/TeamBalanceBar"
 import { formationBalance } from "@/features/teams/teamStrength"
@@ -116,6 +117,8 @@ export function TeamFormationPage({
     finishDraft,
     undoLastPick,
     movePlayer,
+    moveTeam,
+    canReorderTeams,
     setCaptain,
     backToSetup,
     resetDraft,
@@ -127,6 +130,9 @@ export function TeamFormationPage({
 
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [resetConfirmOpen, setResetConfirmOpen] = useState(false)
+  // Reordering swaps the board out for a compact sortable list, so "hold to
+  // drag" always means one thing at a time (a team, not a player).
+  const [reordering, setReordering] = useState(false)
 
   async function handleResetToDraft() {
     setResetConfirmOpen(false)
@@ -462,7 +468,16 @@ export function TeamFormationPage({
         </div>
       )}
 
-      {phase === "done" && (
+      {phase === "done" && reordering && (
+        <div className="flex flex-col gap-4">
+          <TeamOrderEditor teams={teams} onMoveTeam={moveTeam} />
+          <Button size="touch" className="w-full" onClick={() => setReordering(false)}>
+            <Check className="size-4" /> Concluir ordem
+          </Button>
+        </div>
+      )}
+
+      {phase === "done" && !reordering && (
         <div className="flex flex-col gap-4">
           <div className="flex flex-col gap-3">
             <p className="text-sm text-muted-foreground">
@@ -474,8 +489,26 @@ export function TeamFormationPage({
                 <RefreshCw className="size-4" /> Sortear de novo
               </Button>
             )}
+            {canReorderTeams && teams.length > 1 && (
+              <Button
+                variant="outline"
+                size="touch"
+                className="w-full"
+                onClick={() => setReordering(true)}
+              >
+                <ArrowUpDown className="size-4" /> Reordenar times
+              </Button>
+            )}
             <div className="flex gap-2">
-              <Button variant="outline" size="touch" className="flex-1" onClick={resetDraft}>
+              <Button
+                variant="outline"
+                size="touch"
+                className="flex-1"
+                onClick={() => {
+                  setReordering(false)
+                  resetDraft()
+                }}
+              >
                 Refazer times
               </Button>
               <Button

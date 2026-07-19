@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react"
 import { useParams } from "react-router-dom"
-import { AlertTriangle, Trophy, Undo2 } from "lucide-react"
+import { AlertTriangle, ListOrdered, Trophy, Undo2 } from "lucide-react"
 import type { Player } from "@pelafut/shared"
 import {
   useLiveMatch,
@@ -16,6 +16,8 @@ import { elapsedSecondsFor } from "@/features/live/rotation"
 import { penaltyKickStakes, type PenaltyState } from "@/features/live/penalties"
 import { ScoreClock, type ClockState } from "@/features/live/ScoreClock"
 import { MatchFinishedSummary } from "@/features/live/MatchFinishedSummary"
+import { QueueEditorDialog } from "@/features/live/QueueEditorDialog"
+import type { QueueState } from "@/features/live/queueEdit"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Dialog, DialogPopup, DialogTitle } from "@/components/ui/dialog"
@@ -452,9 +454,12 @@ function PenaltyShootoutPanel({
 function TransitionDialog({
   transition,
   onContinue,
+  onAdjustQueue,
 }: {
   transition: TransitionInfo
   onContinue: () => void
+  /** "Wait, that's not who's entering" — the moment a manual queue fix is most needed. */
+  onAdjustQueue: () => void
 }) {
   return (
     <Dialog open onOpenChange={() => {}} disablePointerDismissal>
@@ -493,6 +498,13 @@ function TransitionDialog({
         <Button size="touch" className="w-full" onClick={onContinue}>
           Continuar
         </Button>
+        <button
+          type="button"
+          className="self-center text-xs text-muted-foreground underline"
+          onClick={onAdjustQueue}
+        >
+          Não é esse time? Ajustar a fila
+        </button>
       </DialogPopup>
     </Dialog>
   )
@@ -705,6 +717,9 @@ export function LiveMatchPage() {
     pendingTransition,
     canUndoLastRound,
     canFinishMatch,
+    roundUnderway,
+    currentQueueState,
+    applyQueueEdit,
     phase,
     loading,
     error,
@@ -739,6 +754,7 @@ export function LiveMatchPage() {
   const [endRoundConfirmOpen, setEndRoundConfirmOpen] = useState(false)
   const [undoRoundConfirmOpen, setUndoRoundConfirmOpen] = useState(false)
   const [finishConfirmOpen, setFinishConfirmOpen] = useState(false)
+  const [queueEditorOpen, setQueueEditorOpen] = useState(false)
   const [busy, setBusy] = useState(false)
   const [, forceTick] = useState(0)
 
@@ -765,6 +781,18 @@ export function LiveMatchPage() {
     setBusy(true)
     try {
       await action()
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  // Like `guarded`, but hands the result back — the queue editor only closes
+  // itself once the edit actually landed.
+  async function handleApplyQueueEdit(draft: QueueState): Promise<{ error: string | null }> {
+    if (busy) return { error: "Aguarde a ação anterior terminar" }
+    setBusy(true)
+    try {
+      return await applyQueueEdit(draft)
     } finally {
       setBusy(false)
     }
@@ -926,6 +954,8 @@ export function LiveMatchPage() {
     .filter((t) => t.id !== currentRound?.homeTeamId && t.id !== currentRound?.awayTeamId)
     .sort((a, b) => a.queuePosition - b.queuePosition)
 
+  const queueInitialState = currentQueueState()
+
   const durationSeconds = (match.match_duration_minutes ?? 0) * 60
   const elapsed = currentRound ? elapsedSecondsFor(currentRound) : 0
   const remaining = durationSeconds - elapsed
@@ -962,7 +992,16 @@ export function LiveMatchPage() {
   return (
     <div className="flex w-full flex-col gap-4">
       {pendingTransition && (
-        <TransitionDialog transition={pendingTransition} onContinue={confirmTransition} />
+        <TransitionDialog
+          transition={pendingTransition}
+          onContinue={confirmTransition}
+          onAdjustQueue={async () => {
+            // Confirm first so the new round is loaded — the editor edits the
+            // queue as it stands after the rotation, not before it.
+            await confirmTransition()
+            setQueueEditorOpen(true)
+          }}
+        />
       )}
 
       {error && <p className="text-sm text-destructive">{error}</p>}
@@ -1303,7 +1342,19 @@ export function LiveMatchPage() {
           />
 
           <div className="flex flex-col gap-2">
-            <p className="text-sm font-medium text-muted-foreground">Fila de espera</p>
+            <div className="flex items-center justify-between gap-2">
+              <p className="text-sm font-medium text-muted-foreground">Fila de espera</p>
+              {teams.length > 2 && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="shrink-0"
+                  onClick={() => setQueueEditorOpen(true)}
+                >
+                  <ListOrdered className="size-4" /> Ajustar fila
+                </Button>
+              )}
+            </div>
             {queue.length === 0 && <p className="text-sm text-muted-foreground">Nenhum time esperando.</p>}
             {queue.map((t, i) => (
               <TeamRosterCard
@@ -1345,6 +1396,21 @@ export function LiveMatchPage() {
             onOpenChange={setFinishConfirmOpen}
             onConfirm={handleConfirmFinishMatch}
           />
+
+          {queueInitialState && (
+            <QueueEditorDialog
+              open={queueEditorOpen}
+              onOpenChange={setQueueEditorOpen}
+              matchId={match.id}
+              teams={teams}
+              initial={queueInitialState}
+              roundUnderway={roundUnderway}
+              goalCount={currentRound?.goals.length ?? 0}
+              clockLabel={hasTimer && !neverStarted ? formatClock(elapsed) : null}
+              busy={busy}
+              onApply={handleApplyQueueEdit}
+            />
+          )}
         </>
       )}
     </div>
