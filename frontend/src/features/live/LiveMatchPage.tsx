@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react"
 import { useParams } from "react-router-dom"
-import { AlertTriangle, ListOrdered, Trophy, Undo2 } from "lucide-react"
+import { AlertTriangle, ListOrdered, Pencil, Trophy, Undo2 } from "lucide-react"
 import type { Player } from "@pelafut/shared"
 import {
   useLiveMatch,
@@ -23,6 +23,7 @@ import { readableTextColor } from "@/features/teams/teamColors"
 import type { QueueState } from "@/features/live/queueEdit"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { Input } from "@/components/ui/input"
 import { Dialog, DialogPopup, DialogTitle } from "@/components/ui/dialog"
 import { ConfirmDialog } from "@/components/ui/confirm-dialog"
 import { EmptyState } from "@/components/ui/empty-state"
@@ -82,6 +83,86 @@ function GoalButton({
     >
       GOL TIME {number}
     </Button>
+  )
+}
+
+/**
+ * Sets the clock to an exact minute:second value. Opens prefilled with the
+ * current time so a small correction is a couple of taps. Always leaves the
+ * clock paused (the hook does), so the operator starts it when ready.
+ */
+function ClockEditDialog({
+  open,
+  onOpenChange,
+  initialSeconds,
+  onSave,
+}: {
+  open: boolean
+  onOpenChange: (open: boolean) => void
+  initialSeconds: number
+  onSave: (seconds: number) => void
+}) {
+  const [minutes, setMinutes] = useState("0")
+  const [seconds, setSeconds] = useState("0")
+
+  useEffect(() => {
+    if (open) {
+      const total = Math.max(0, Math.floor(initialSeconds))
+      setMinutes(String(Math.floor(total / 60)))
+      setSeconds(String(total % 60))
+    }
+  }, [open, initialSeconds])
+
+  function save() {
+    const m = Math.max(0, Math.floor(Number(minutes) || 0))
+    const s = Math.min(59, Math.max(0, Math.floor(Number(seconds) || 0)))
+    onSave(m * 60 + s)
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogPopup>
+        <DialogTitle>Ajustar o cronômetro</DialogTitle>
+        <p className="-mt-2 text-sm text-muted-foreground">
+          Defina o tempo e toque em salvar — o cronômetro fica pausado nesse valor, pronto para você
+          continuar quando quiser.
+        </p>
+        <div className="flex items-end justify-center gap-2">
+          <label className="flex flex-col items-center gap-1 text-xs text-muted-foreground">
+            Minutos
+            <Input
+              type="number"
+              min={0}
+              inputMode="numeric"
+              value={minutes}
+              onChange={(e) => setMinutes(e.target.value)}
+              className="w-20 text-center text-lg tabular-nums"
+            />
+          </label>
+          <span className="pb-2 text-2xl font-bold text-muted-foreground">:</span>
+          <label className="flex flex-col items-center gap-1 text-xs text-muted-foreground">
+            Segundos
+            <Input
+              type="number"
+              min={0}
+              max={59}
+              inputMode="numeric"
+              value={seconds}
+              onChange={(e) => setSeconds(e.target.value)}
+              className="w-20 text-center text-lg tabular-nums"
+            />
+          </label>
+        </div>
+        <div className="flex gap-2">
+          <Button variant="outline" size="touch" className="flex-1" onClick={() => onOpenChange(false)}>
+            Cancelar
+          </Button>
+          <Button size="touch" className="flex-1" onClick={save}>
+            Salvar tempo
+          </Button>
+        </div>
+      </DialogPopup>
+    </Dialog>
   )
 }
 
@@ -787,6 +868,7 @@ export function LiveMatchPage() {
     pauseTimer,
     resumeTimer,
     restartTimer,
+    setClock,
   } = useLiveMatch(id!)
 
   const [scoringForTeam, setScoringForTeam] = useState<string | null>(null)
@@ -796,6 +878,7 @@ export function LiveMatchPage() {
   const [undoRoundConfirmOpen, setUndoRoundConfirmOpen] = useState(false)
   const [finishConfirmOpen, setFinishConfirmOpen] = useState(false)
   const [queueEditorOpen, setQueueEditorOpen] = useState(false)
+  const [clockEditOpen, setClockEditOpen] = useState(false)
   const [busy, setBusy] = useState(false)
   // Keyed on the current round so the counts move forward as games end.
   const gamesPlayed = useGamesPlayed(id!, true, currentRound?.id ?? null)
@@ -1207,6 +1290,14 @@ export function LiveMatchPage() {
                   Inicie o cronômetro para poder registrar gols.
                 </p>
               )}
+              <button
+                type="button"
+                className="flex items-center justify-center gap-1.5 self-center text-xs text-muted-foreground underline"
+                disabled={busy}
+                onClick={() => setClockEditOpen(true)}
+              >
+                <Pencil className="size-3.5" /> Ajustar tempo
+              </button>
             </>
           )}
 
@@ -1456,6 +1547,16 @@ export function LiveMatchPage() {
               onApply={handleApplyQueueEdit}
             />
           )}
+
+          <ClockEditDialog
+            open={clockEditOpen}
+            onOpenChange={setClockEditOpen}
+            initialSeconds={elapsed}
+            onSave={async (secs) => {
+              await guarded(() => setClock(secs))
+              setClockEditOpen(false)
+            }}
+          />
         </>
       )}
     </div>

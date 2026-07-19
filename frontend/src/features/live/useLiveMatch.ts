@@ -783,9 +783,36 @@ export function useLiveMatch(matchId: string) {
       return { error: deleteRoundError.message }
     }
 
+    // Restore the reopened round's clock to where it stopped, PAUSED. Without
+    // this its old `started_at` stays put and elapsed jumps to "now − old
+    // start", so the clock looks like it kept running the whole time it was
+    // finished. Freezing it at the time-at-finish (paused_at if it was paused,
+    // else finished_at) and re-anchoring started_at to now puts it right back.
+    const { data: finishedRow } = await supabase
+      .from("match_rounds")
+      .select("started_at, paused_at, paused_seconds, finished_at")
+      .eq("id", finishedRoundId)
+      .single()
+    let clockFields: Record<string, string | number> = {}
+    if (finishedRow) {
+      const startedMs = new Date(finishedRow.started_at as string).getTime()
+      const refIso = (finishedRow.paused_at as string | null) ?? (finishedRow.finished_at as string | null)
+      const refMs = refIso ? new Date(refIso).getTime() : Date.now()
+      const elapsed = Math.max(
+        0,
+        Math.round((refMs - startedMs) / 1000 - ((finishedRow.paused_seconds as number | null) ?? 0))
+      )
+      const now = Date.now()
+      clockFields = {
+        started_at: new Date(now - elapsed * 1000).toISOString(),
+        paused_at: new Date(now).toISOString(),
+        paused_seconds: 0,
+      }
+    }
+
     const { error: revertError } = await supabase
       .from("match_rounds")
-      .update({ status: "in_progress", result: null, decided_by: null, finished_at: null })
+      .update({ status: "in_progress", result: null, decided_by: null, finished_at: null, ...clockFields })
       .eq("id", finishedRoundId)
     if (revertError) {
       setError(revertError.message)
@@ -1025,6 +1052,32 @@ export function useLiveMatch(matchId: string) {
     setCurrentRound((prev) => (prev ? { ...prev, pausedSeconds } : prev))
   }
 
+  /**
+   * Sets the clock to an exact elapsed time and leaves it PAUSED, so the
+   * operator can start from wherever they want (fixing a miscount, or a time
+   * that ran while nobody was watching). Reuses the wall-clock model instead of
+   * adding a stored counter: pretend the round started `seconds` ago and is
+   * paused right now — `elapsedSecondsFor` then reads exactly `seconds`, and a
+   * later "Retomar" continues from there.
+   */
+  async function setClock(seconds: number) {
+    if (!currentRound) return { error: "Nenhuma rodada ativa" }
+    const clamped = Math.max(0, Math.round(seconds))
+    const now = Date.now()
+    const startedAt = new Date(now - clamped * 1000).toISOString()
+    const pausedAt = new Date(now).toISOString()
+    const { error: updateError } = await supabase
+      .from("match_rounds")
+      .update({ started_at: startedAt, paused_at: pausedAt, paused_seconds: 0 })
+      .eq("id", currentRound.id)
+    if (updateError) {
+      setError(updateError.message)
+      return { error: updateError.message }
+    }
+    setCurrentRound((prev) => (prev ? { ...prev, startedAt, pausedAt, pausedSeconds: 0 } : prev))
+    return { error: null }
+  }
+
   async function reopenMatch() {
     const { data: roundRows, error: roundError } = await supabase
       .from("match_rounds")
@@ -1112,6 +1165,7 @@ export function useLiveMatch(matchId: string) {
     pauseTimer,
     resumeTimer,
     restartTimer,
+    setClock,
     reload: load,
   }
 }
