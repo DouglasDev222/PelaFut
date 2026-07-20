@@ -6,6 +6,7 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { PublicLinkCard } from "@/features/public/PublicLinkCard"
+import { AccountSwitcherCard } from "@/features/auth/AccountSwitcherCard"
 
 export function ProfilePage() {
   const { user, signOut } = useAuth()
@@ -93,6 +94,8 @@ export function ProfilePage() {
           </form>
         </CardContent>
       </Card>
+
+      <AccountSwitcherCard />
 
       <PublicLinkCard />
     </div>
