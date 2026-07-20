@@ -41,11 +41,13 @@ function writeAccounts(accounts: RememberedAccount[]) {
 /**
  * Records (or refreshes) the account that is currently signed in. Called on
  * every auth-state change so the active account's token snapshot never goes
- * stale under Supabase's refresh-token rotation. Keeps any existing label.
+ * stale under Supabase's refresh-token rotation. A previously chosen label
+ * always wins; otherwise it defaults to the account's name, then the email.
  */
 export function upsertActiveAccount(input: {
   userId: string
   email: string
+  name?: string
   accessToken: string
   refreshToken: string
 }): RememberedAccount[] {
@@ -54,7 +56,7 @@ export function upsertActiveAccount(input: {
   const next: RememberedAccount = {
     userId: input.userId,
     email: input.email,
-    label: existing?.label || input.email,
+    label: existing?.label || input.name?.trim() || input.email,
     accessToken: input.accessToken,
     refreshToken: input.refreshToken,
   }

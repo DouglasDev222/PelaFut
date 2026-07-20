@@ -31,9 +31,11 @@ const AuthContext = createContext<AuthContextValue | null>(null)
  * token snapshot current so a later switch back doesn't hit an expired token. */
 function rememberSession(session: Session | null): RememberedAccount[] {
   if (!session?.user.email) return readAccounts()
+  const name = session.user.user_metadata?.full_name
   return upsertActiveAccount({
     userId: session.user.id,
     email: session.user.email,
+    name: typeof name === "string" ? name : undefined,
     accessToken: session.access_token,
     refreshToken: session.refresh_token,
   })
@@ -77,12 +79,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       return { error: error?.message ?? null }
     },
     async signOut() {
-      // "Sair" is a real logout: revoke the token server-side and drop this
-      // account from the remembered list so it can't be switched back into
-      // with a now-dead snapshot.
-      const leavingId = session?.user.id
+      // "Sair" is a real logout (the token is revoked server-side), but the
+      // account stays remembered — like an account chooser — so its label
+      // survives and "Continuar como" can bring it back with one login.
+      // Fully dropping it from this device is the "×" (forgetAccount).
       await supabase.auth.signOut()
-      if (leavingId) setAccounts(removeStoredAccount(leavingId))
     },
     async resetPassword(email) {
       const { error } = await supabase.auth.resetPasswordForEmail(email, {
