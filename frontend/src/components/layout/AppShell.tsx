@@ -9,7 +9,7 @@ const ROOT_TABS = [
   { path: "/profile", label: "Perfil", Icon: User },
 ]
 
-const ROOT_PATHS = new Set(["/", ...ROOT_TABS.map((t) => t.path)])
+const ROOT_PATHS = new Set(ROOT_TABS.map((t) => t.path))
 
 export function AppShell({
   title,

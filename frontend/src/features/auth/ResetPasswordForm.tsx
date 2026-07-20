@@ -22,7 +22,7 @@ export function ResetPasswordForm() {
       setError(error.message)
       return
     }
-    navigate("/")
+    navigate("/matches")
   }
 
   return (

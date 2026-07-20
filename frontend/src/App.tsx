@@ -1,6 +1,6 @@
 import { useState } from "react"
 import { BrowserRouter, Routes, Route, Link, useParams, useNavigate } from "react-router-dom"
-import { CalendarDays, MoreVertical, User, UserPlus, Users } from "lucide-react"
+import { MoreVertical, UserPlus, Users } from "lucide-react"
 import { AuthProvider } from "@/features/auth/AuthProvider"
 import { ProtectedRoute } from "@/features/auth/ProtectedRoute"
 import { AppShell } from "@/components/layout/AppShell"
@@ -27,41 +27,11 @@ import { MatchHistoryPage } from "@/features/live/MatchHistoryPage"
 import { MatchStatsPage } from "@/features/stats/MatchStatsPage"
 import { PlayerStatsPage } from "@/features/stats/PlayerStatsPage"
 import { GeneralStatsPage } from "@/features/stats/GeneralStatsPage"
+import { LandingPage } from "@/features/public/LandingPage"
 import { PublicHomePage } from "@/features/public/PublicHomePage"
 import { PublicGeneralPage } from "@/features/public/PublicGeneralPage"
 import { PublicMatchPage } from "@/features/public/PublicMatchPage"
 import { PublicPlayerPage } from "@/features/public/PublicPlayerPage"
-
-function HomePage() {
-  const shortcuts = [
-    { to: "/matches", label: "Peladas", Icon: CalendarDays },
-    { to: "/players", label: "Peladeiros", Icon: Users },
-    { to: "/profile", label: "Perfil", Icon: User },
-  ]
-  return (
-    <div className="flex flex-col gap-4">
-      <p className="text-sm text-muted-foreground">Bem-vindo de volta.</p>
-      <Link
-        to="/matches/new"
-        className="flex items-center justify-center rounded-xl bg-primary px-4 py-4 text-base font-medium text-primary-foreground"
-      >
-        + Nova pelada
-      </Link>
-      <div className="grid grid-cols-3 gap-3">
-        {shortcuts.map(({ to, label, Icon }) => (
-          <Link
-            key={to}
-            to={to}
-            className="flex flex-col items-center gap-1.5 rounded-xl border p-4 text-xs text-muted-foreground hover:bg-muted"
-          >
-            <Icon className="size-6" />
-            {label}
-          </Link>
-        ))}
-      </div>
-    </div>
-  )
-}
 
 function ParticipantSelectorRoute() {
   const [actions, setActions] = useState<{ addPlayer: () => void }>({ addPlayer: () => {} })
@@ -160,16 +130,9 @@ function App() {
           <Route path="/pelada/:codigo/geral" element={<PublicGeneralPage />} />
           <Route path="/pelada/:codigo/jogo/:jogoId" element={<PublicMatchPage />} />
           <Route path="/pelada/:codigo/jogador/:jogadorId" element={<PublicPlayerPage />} />
-          <Route
-            path="/"
-            element={
-              <ProtectedRoute>
-                <AppShell title="PelaFut">
-                  <HomePage />
-                </AppShell>
-              </ProtectedRoute>
-            }
-          />
+          {/* A porta da frente é pública: o app inteiro vive atrás do login,
+              e "/" nunca mais entrega a tela de entrar para um desconhecido. */}
+          <Route path="/" element={<LandingPage />} />
           <Route
             path="/profile"
             element={

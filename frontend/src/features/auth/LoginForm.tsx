@@ -24,7 +24,7 @@ export function LoginForm() {
       setError(error)
       return
     }
-    navigate("/")
+    navigate("/matches")
   }
 
   return (

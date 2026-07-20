@@ -28,7 +28,7 @@ export function SignupForm() {
       return
     }
     setInfo("Conta criada. Se a confirmação de e-mail estiver ativada, verifique sua caixa de entrada.")
-    setTimeout(() => navigate("/"), 1500)
+    setTimeout(() => navigate("/matches"), 1500)
   }
 
   return (
