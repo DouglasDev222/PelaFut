@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react"
+import { useEffect, useRef, useState } from "react"
 import { useParams } from "react-router-dom"
 import { AlertTriangle, ListOrdered, Minus, Plus, Trophy, Undo2 } from "lucide-react"
 import type { Player } from "@pelafut/shared"
@@ -90,17 +90,91 @@ function GoalButton({
  * current time so a small correction is a couple of taps. Always leaves the
  * clock paused (the hook does), so the operator starts it when ready.
  */
+/** Cycles a value inside 0..max, so stepping past either end comes back around. */
+function wrapValue(n: number, max: number) {
+  const span = max + 1
+  return ((n % span) + span) % span
+}
+
+/**
+ * Press-and-hold to repeat, getting faster the longer it is held — the
+ * difference between tapping "+" forty times and holding it for two seconds.
+ */
+function useHoldRepeat(action: () => void) {
+  const actionRef = useRef(action)
+  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  // A pointer press already fired the step; swallow the click that follows it.
+  const firedRef = useRef(false)
+
+  useEffect(() => {
+    actionRef.current = action
+  })
+
+  useEffect(() => {
+    return () => {
+      if (timerRef.current) clearTimeout(timerRef.current)
+    }
+  }, [])
+
+  function stop() {
+    if (timerRef.current) {
+      clearTimeout(timerRef.current)
+      timerRef.current = null
+    }
+  }
+
+  function start() {
+    stop()
+    firedRef.current = true
+    actionRef.current()
+    let delay = 400
+    function tick() {
+      actionRef.current()
+      delay = Math.max(60, delay * 0.75)
+      timerRef.current = setTimeout(tick, delay)
+    }
+    timerRef.current = setTimeout(tick, delay)
+  }
+
+  // Keyboard activation never sends a pointer event, so it steps here instead.
+  function handleClick() {
+    if (firedRef.current) {
+      firedRef.current = false
+      return
+    }
+    actionRef.current()
+  }
+
+  return { start, stop, handleClick }
+}
+
 function ClockStepper({
   label,
   value,
   onStep,
+  onSet,
   step,
 }: {
   label: string
   value: number
   onStep: (delta: number) => void
+  onSet: (value: number) => void
   step: number
 }) {
+  const [editing, setEditing] = useState(false)
+  const [draft, setDraft] = useState("")
+  const up = useHoldRepeat(() => onStep(step))
+  const down = useHoldRepeat(() => onStep(-step))
+
+  function commit() {
+    const n = Math.floor(Number(draft))
+    if (Number.isFinite(n)) onSet(n)
+    setEditing(false)
+  }
+
+  const buttonClass =
+    "flex size-11 touch-none items-center justify-center rounded-full border bg-muted text-foreground select-none active:scale-95 hover:bg-muted/70"
+
   return (
     <div className="flex flex-col items-center gap-2">
       <span className="text-xs font-medium text-muted-foreground">{label}</span>
@@ -108,19 +182,54 @@ function ClockStepper({
         <button
           type="button"
           aria-label={`Aumentar ${label.toLowerCase()}`}
-          onClick={() => onStep(step)}
-          className="flex size-11 items-center justify-center rounded-full border bg-muted text-foreground active:scale-95 hover:bg-muted/70"
+          onPointerDown={up.start}
+          onPointerUp={up.stop}
+          onPointerLeave={up.stop}
+          onPointerCancel={up.stop}
+          onClick={up.handleClick}
+          className={buttonClass}
         >
           <Plus className="size-5" />
         </button>
-        <span className="w-16 text-center font-mono text-4xl leading-none font-bold tabular-nums">
-          {String(value).padStart(2, "0")}
-        </span>
+
+        {editing ? (
+          <input
+            type="number"
+            inputMode="numeric"
+            autoFocus
+            value={draft}
+            onChange={(e) => setDraft(e.target.value)}
+            onFocus={(e) => e.target.select()}
+            onBlur={commit}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") commit()
+              if (e.key === "Escape") setEditing(false)
+            }}
+            className="h-12 w-16 rounded-lg border bg-background text-center font-mono text-4xl leading-none font-bold tabular-nums outline-none [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
+          />
+        ) : (
+          <button
+            type="button"
+            aria-label={`Digitar ${label.toLowerCase()}`}
+            onClick={() => {
+              setDraft(String(value))
+              setEditing(true)
+            }}
+            className="h-12 w-16 rounded-lg font-mono text-4xl leading-none font-bold tabular-nums hover:bg-muted"
+          >
+            {String(value).padStart(2, "0")}
+          </button>
+        )}
+
         <button
           type="button"
           aria-label={`Diminuir ${label.toLowerCase()}`}
-          onClick={() => onStep(-step)}
-          className="flex size-11 items-center justify-center rounded-full border bg-muted text-foreground active:scale-95 hover:bg-muted/70"
+          onPointerDown={down.start}
+          onPointerUp={down.stop}
+          onPointerLeave={down.stop}
+          onPointerCancel={down.stop}
+          onClick={down.handleClick}
+          className={buttonClass}
         >
           <Minus className="size-5" />
         </button>
@@ -160,22 +269,24 @@ function ClockEditDialog({
       <DialogPopup>
         <DialogTitle>Ajustar o cronômetro</DialogTitle>
         <p className="-mt-2 text-sm text-muted-foreground">
-          Toque nos botões para ajustar o tempo — o cronômetro fica pausado nesse valor, pronto para
-          você continuar quando quiser.
+          Use os botões (segure para ir mais rápido) ou toque no número para digitar. O cronômetro
+          fica pausado nesse valor, pronto para você continuar quando quiser.
         </p>
         <div className="flex items-center justify-center gap-3 py-2">
           <ClockStepper
             label="Minutos"
             value={minutes}
             step={1}
-            onStep={(d) => setMinutes((m) => Math.min(99, Math.max(0, m + d)))}
+            onStep={(d) => setMinutes((m) => wrapValue(m + d, 99))}
+            onSet={(v) => setMinutes(Math.min(99, Math.max(0, v)))}
           />
           <span className="text-3xl font-bold text-muted-foreground">:</span>
           <ClockStepper
             label="Segundos"
             value={seconds}
             step={5}
-            onStep={(d) => setSeconds((s) => Math.min(55, Math.max(0, s + d)))}
+            onStep={(d) => setSeconds((s) => wrapValue(s + d, 59))}
+            onSet={(v) => setSeconds(Math.min(59, Math.max(0, v)))}
           />
         </div>
         <div className="flex gap-2">
@@ -1569,9 +1680,11 @@ export function LiveMatchPage() {
           <ClockEditDialog
             open={clockEditOpen}
             onOpenChange={setClockEditOpen}
-            initialSeconds={elapsed}
+            // The clock counts down, so the dialog edits the time *shown*
+            // (remaining) and converts to the elapsed value the hook stores.
+            initialSeconds={Math.max(0, remaining)}
             onSave={async (secs) => {
-              await guarded(() => setClock(secs))
+              await guarded(() => setClock(Math.max(0, durationSeconds - secs)))
               setClockEditOpen(false)
             }}
           />
