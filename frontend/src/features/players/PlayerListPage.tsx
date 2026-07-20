@@ -111,7 +111,7 @@ function PlayerCard({
         {/* Only the avatar/name area is the link, so the actions menu below
             stays a sibling — a <button> inside an <a> would be invalid HTML. */}
         <Link
-          to={`/players/${player.id}/stats`}
+          to={`/players/${player.id}`}
           className="flex min-w-0 flex-1 items-center gap-2.5"
         >
           <PlayerAvatar
@@ -147,8 +147,9 @@ function PlayerCard({
             <MoreVertical className="size-4" />
           </DropdownMenuTrigger>
           <DropdownMenuContent>
-            <DropdownMenuItem render={<Link to={`/players/${player.id}/stats`} />}>Perfil</DropdownMenuItem>
+            <DropdownMenuItem render={<Link to={`/players/${player.id}`} />}>Perfil</DropdownMenuItem>
             <DropdownMenuItem render={<Link to={`/players/${player.id}/edit`} />}>Editar</DropdownMenuItem>
+            <DropdownMenuItem render={<Link to={`/players/${player.id}/stats`} />}>Estatísticas</DropdownMenuItem>
             <DropdownMenuItem onClick={onToggleActive}>
               {player.active ? "Inativar" : "Ativar"}
             </DropdownMenuItem>

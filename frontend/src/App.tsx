@@ -18,6 +18,7 @@ import { ResetPasswordForm } from "@/features/auth/ResetPasswordForm"
 import { ProfilePage } from "@/features/auth/ProfilePage"
 import { PlayerListPage } from "@/features/players/PlayerListPage"
 import { PlayerFormPage } from "@/features/players/PlayerFormPage"
+import { PlayerProfilePage } from "@/features/players/PlayerProfilePage"
 import { MatchListPage } from "@/features/matches/MatchListPage"
 import { MatchFormPage } from "@/features/matches/MatchFormPage"
 import { ParticipantSelectorPage } from "@/features/matches/ParticipantSelectorPage"
@@ -174,6 +175,16 @@ function App() {
             }
           />
           <Route
+            path="/players/:id"
+            element={
+              <ProtectedRoute>
+                <AppShell title="Perfil do peladeiro">
+                  <PlayerProfilePage />
+                </AppShell>
+              </ProtectedRoute>
+            }
+          />
+          <Route
             path="/matches"
             element={
               <ProtectedRoute>
@@ -261,7 +272,7 @@ function App() {
             path="/players/:id/stats"
             element={
               <ProtectedRoute>
-                <AppShell title="Perfil do peladeiro">
+                <AppShell title="Estatísticas do peladeiro">
                   <PlayerStatsPage />
                 </AppShell>
               </ProtectedRoute>
