@@ -111,6 +111,10 @@ export function useLiveMatch(matchId: string) {
   const [currentRound, setCurrentRound] = useState<CurrentRound | null>(null)
   const [pendingBorrows, setPendingBorrows] = useState<PendingBorrowNeed[]>([])
   const [conflictWarnings, setConflictWarnings] = useState<BorrowConflictWarning[]>([])
+  // Players who left the pelada: playerId -> the round sequence they're absent
+  // from onward. A departure never removes them from the roster (that would
+  // rewrite past stats) — it just makes their team short from that round on.
+  const [departures, setDepartures] = useState<Map<string, number>>(new Map())
   const [pendingTieOrder, setPendingTieOrder] = useState<PendingTieOrder | null>(null)
   const [pendingTieDecision, setPendingTieDecision] = useState<PendingTieOrder | null>(null)
   const [pendingDirectWinner, setPendingDirectWinner] = useState<PendingTieOrder | null>(null)
@@ -239,6 +243,27 @@ export function useLiveMatch(matchId: string) {
       return
     }
 
+    const { data: departureRows, error: departuresError } = await supabase
+      .from("match_player_departures")
+      .select("player_id, from_sequence")
+      .eq("match_id", matchId)
+    if (departuresError) {
+      setError(departuresError.message)
+      setLoading(false)
+      return
+    }
+    const departureMap = new Map<string, number>(
+      (departureRows ?? []).map((d) => [d.player_id as string, d.from_sequence as number])
+    )
+    setDepartures(departureMap)
+    // Who is absent from THIS round onward — used both to detect the shortfall
+    // and (via the exposed set) to keep them out of the on-court roster.
+    const departedThisRound = new Set(
+      [...departureMap.entries()]
+        .filter(([, from]) => (latestRound.sequence as number) >= from)
+        .map(([playerId]) => playerId)
+    )
+
     // A shootout in progress leaves kicks recorded but the round still
     // in_progress — reconstruct it so a refresh mid-shootout doesn't lose it.
     if (penaltyKickRows && penaltyKickRows.length > 0) {
@@ -335,8 +360,16 @@ export function useLiveMatch(matchId: string) {
         if (alreadyBorrowedTeamIds.has(teamId)) continue
         const team = loadedTeams.find((t) => t.id === teamId)
         if (!team) continue
-        const shortfall = borrowShortfall(team.players.length, matchData.players_per_team)
-        if (shortfall > 0 && leavingCandidates.length > 0) {
+        // Players who left don't count toward the roster from this round on, so
+        // a departure makes an otherwise-full team short.
+        const hasDeparture = team.players.some((p) => departedThisRound.has(p.id))
+        const presentCount = team.players.filter((p) => !departedThisRound.has(p.id)).length
+        const shortfall = borrowShortfall(presentCount, matchData.players_per_team)
+        // A shortfall prompts when there's someone to suggest (a team just off
+        // court) OR when it was caused by a departure — in which case the dialog
+        // falls back to "any player in the pelada". A reserve team that's simply
+        // built short still waits for a loser to borrow from, as before.
+        if (shortfall > 0 && (leavingCandidates.length > 0 || hasDeparture)) {
           needs.push({ teamId, count: shortfall, candidates: leavingCandidates })
         }
       }
@@ -1120,12 +1153,23 @@ export function useLiveMatch(matchId: string) {
     return { error: null }
   }
 
+  // Players absent from the current round onward — the on-court roster (goal
+  // author, borrow candidates) must leave them out.
+  const departedPlayerIdsThisRound = new Set(
+    currentRound
+      ? [...departures.entries()]
+          .filter(([, from]) => currentRound.sequence >= from)
+          .map(([playerId]) => playerId)
+      : []
+  )
+
   return {
     match,
     teams,
     currentRound,
     pendingBorrows,
     conflictWarnings,
+    departedPlayerIdsThisRound,
     pendingTieOrder,
     pendingTieDecision,
     pendingDirectWinner,

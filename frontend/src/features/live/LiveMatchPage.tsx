@@ -13,6 +13,7 @@ import {
   type TransitionInfo,
 } from "@/features/live/useLiveMatch"
 import { elapsedSecondsFor } from "@/features/live/rotation"
+import { buildBorrowAnyCandidates, type BorrowCandidateTag } from "@/features/live/departures"
 import { penaltyKickStakes, type PenaltyState } from "@/features/live/penalties"
 import { ScoreClock, type ClockState } from "@/features/live/ScoreClock"
 import { MatchFinishedSummary } from "@/features/live/MatchFinishedSummary"
@@ -389,32 +390,74 @@ function AssistDialog({
   )
 }
 
+const BORROW_TAG_LABEL: Record<BorrowCandidateTag, string> = {
+  own: "já está no time",
+  opponent: "adversário",
+  departed: "saiu",
+  waiting: "",
+}
+
 function BorrowPrompt({
   need,
   suggested,
   team,
+  teams,
+  opponentTeamId,
+  departedPlayerIds,
   onConfirm,
 }: {
   need: PendingBorrowNeed
   suggested: BorrowCandidate[]
   team: LiveTeam | undefined
+  teams: LiveTeam[]
+  opponentTeamId: string | null
+  departedPlayerIds: Set<string>
   onConfirm: (selected: BorrowCandidate[]) => void
 }) {
-  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set(suggested.map((s) => s.player.id)))
+  // Ordered so that, once the needed count is reached, tapping another swaps out
+  // the oldest pick instead of doing nothing — radio behavior for a single loan.
+  const [selectedIds, setSelectedIds] = useState<string[]>(suggested.map((s) => s.player.id))
+  const [showAll, setShowAll] = useState(false)
+
+  // Everyone in the pelada as a borrow option, tagged. Resolving a selection
+  // back to {player, fromTeamId} for confirmBorrow works for both the quick
+  // suggestions (from the team that cycled off) and this full list.
+  const anyCandidates = buildBorrowAnyCandidates({
+    teams,
+    borrowingTeamId: need.teamId,
+    opponentTeamId,
+    departedIds: departedPlayerIds,
+  })
+  const byId = new Map<string, BorrowCandidate>()
+  for (const c of need.candidates) byId.set(c.player.id, { player: c.player, fromTeamId: c.fromTeamId })
+  for (const c of anyCandidates) {
+    if (!byId.has(c.player.id)) byId.set(c.player.id, { player: c.player, fromTeamId: c.fromTeamId })
+  }
 
   function toggle(playerId: string) {
     setSelectedIds((prev) => {
-      const next = new Set(prev)
-      if (next.has(playerId)) {
-        next.delete(playerId)
-      } else if (next.size < need.count) {
-        next.add(playerId)
-      }
-      return next
+      if (prev.includes(playerId)) return prev.filter((id) => id !== playerId)
+      if (prev.length < need.count) return [...prev, playerId]
+      // At capacity: drop the oldest pick and add the new one.
+      return [...prev.slice(1), playerId]
     })
   }
 
-  const selected = need.candidates.filter((c) => selectedIds.has(c.player.id))
+  const selected = selectedIds.flatMap((pid) => {
+    const c = byId.get(pid)
+    return c ? [c] : []
+  })
+  const anyOpponentSelected = selected.some((s) => s.fromTeamId === opponentTeamId)
+
+  // The "any player" list: everyone except the quick suggestions already shown
+  // above, grouped by their team so the origin (and the warnings) is obvious.
+  const suggestedIds = new Set(need.candidates.map((c) => c.player.id))
+  const extraByTeam = teams
+    .map((t) => ({
+      team: t,
+      players: anyCandidates.filter((c) => c.fromTeamId === t.id && !suggestedIds.has(c.player.id)),
+    }))
+    .filter((g) => g.players.length > 0)
 
   return (
     <Card className="border-warning/40">
@@ -426,22 +469,90 @@ function BorrowPrompt({
       <CardContent className="flex flex-col gap-3">
         <p className="text-sm text-muted-foreground">
           Escolha {need.count} jogador{need.count === 1 ? "" : "es"} emprestado
-          {need.count === 1 ? "" : "s"} do time que saiu de quadra para completar o time.
+          {need.count === 1 ? "" : "s"} para completar o time.
         </p>
-        <div className="flex flex-col gap-1">
-          {need.candidates.map((c) => (
-            <label key={c.player.id} className="flex min-h-11 items-center gap-2 rounded-md border p-2 text-sm">
-              <input
-                type="checkbox"
-                className="size-4"
-                checked={selectedIds.has(c.player.id)}
-                onChange={() => toggle(c.player.id)}
-              />
-              {c.player.name}
-              {c.player.nickname ? ` (${c.player.nickname})` : ""}
-            </label>
-          ))}
-        </div>
+
+        {need.candidates.length > 0 && (
+          <div className="flex flex-col gap-1">
+            <span className="text-xs font-medium text-muted-foreground">Do time que saiu de quadra</span>
+            {need.candidates.map((c) => (
+              <label key={c.player.id} className="flex min-h-11 items-center gap-2 rounded-md border p-2 text-sm">
+                <input
+                  type="checkbox"
+                  className="size-4"
+                  checked={selectedIds.includes(c.player.id)}
+                  onChange={() => toggle(c.player.id)}
+                />
+                {c.player.name}
+                {c.player.nickname ? ` (${c.player.nickname})` : ""}
+              </label>
+            ))}
+          </div>
+        )}
+
+        <button
+          type="button"
+          onClick={() => setShowAll((v) => !v)}
+          className="self-start text-xs font-medium text-primary underline-offset-2 hover:underline"
+        >
+          {showAll ? "Ocultar" : "Escolher qualquer jogador da pelada"}
+        </button>
+
+        {showAll && (
+          <div className="flex flex-col gap-2">
+            {extraByTeam.map(({ team: t, players }) => (
+              <div key={t.id} className="flex flex-col gap-1">
+                <span className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
+                  <span className="inline-block size-2.5 rounded-full border border-white/10" style={{ backgroundColor: t.color }} />
+                  Time {t.number}
+                </span>
+                {players.map((c) => {
+                  const disabled = c.tag === "own" || c.tag === "departed"
+                  const label = BORROW_TAG_LABEL[c.tag]
+                  return (
+                    <label
+                      key={c.player.id}
+                      className={cn(
+                        "flex min-h-11 items-center gap-2 rounded-md border p-2 text-sm",
+                        disabled && "opacity-50"
+                      )}
+                    >
+                      <input
+                        type="checkbox"
+                        className="size-4"
+                        disabled={disabled}
+                        checked={selectedIds.includes(c.player.id)}
+                        onChange={() => toggle(c.player.id)}
+                      />
+                      <span className="flex-1">
+                        {c.player.name}
+                        {c.player.nickname ? ` (${c.player.nickname})` : ""}
+                      </span>
+                      {label && (
+                        <span
+                          className={cn(
+                            "shrink-0 rounded-full px-1.5 py-0.5 text-[10px] font-medium",
+                            c.tag === "opponent" ? "bg-warning/15 text-warning" : "bg-muted text-muted-foreground"
+                          )}
+                        >
+                          {label}
+                        </span>
+                      )}
+                    </label>
+                  )
+                })}
+              </div>
+            ))}
+          </div>
+        )}
+
+        {anyOpponentSelected && (
+          <p className="flex items-start gap-1.5 text-xs text-warning">
+            <AlertTriangle className="mt-0.5 size-3.5 shrink-0" />
+            Emprestar do adversário faz o jogador contar para os dois lados nas estatísticas desta rodada.
+          </p>
+        )}
+
         <Button size="touch" className="w-full" disabled={selected.length !== need.count} onClick={() => onConfirm(selected)}>
           Confirmar e começar o jogo
         </Button>
@@ -965,6 +1076,7 @@ export function LiveMatchPage() {
     currentRound,
     pendingBorrows,
     conflictWarnings,
+    departedPlayerIdsThisRound,
     pendingTieOrder,
     pendingTieDecision,
     pendingDirectWinner,
@@ -1208,7 +1320,9 @@ export function LiveMatchPage() {
   function onCourtPlayers(teamId: string | undefined): Player[] {
     if (!teamId) return []
     const team = teams.find((t) => t.id === teamId)
-    const own = team?.players ?? []
+    // Someone who left the pelada isn't on court anymore — keep them out of the
+    // goal-author list and the on-court roster.
+    const own = (team?.players ?? []).filter((p) => !departedPlayerIdsThisRound.has(p.id))
     const borrowed = currentRound?.borrowedPlayers.filter((b) => b.teamId === teamId).map((b) => b.player) ?? []
     return [...own, ...borrowed]
   }
@@ -1374,6 +1488,15 @@ export function LiveMatchPage() {
             need={need}
             suggested={suggestedBorrowFor(need)}
             team={teams.find((t) => t.id === need.teamId)}
+            teams={teams}
+            opponentTeamId={
+              currentRound
+                ? currentRound.homeTeamId === need.teamId
+                  ? currentRound.awayTeamId
+                  : currentRound.homeTeamId
+                : null
+            }
+            departedPlayerIds={departedPlayerIdsThisRound}
             onConfirm={(selected) => guarded(() => confirmBorrow(need.teamId, selected))}
           />
         ))}

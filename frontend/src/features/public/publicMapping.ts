@@ -9,6 +9,7 @@ import {
 } from "@/features/stats/aggregate"
 import type { RawStatsData, StatsRound, StatsTeam } from "@/features/stats/fetchRaw"
 import type { MatchContribution } from "@/features/stats/usePlayerStats"
+import { departureKey, isPresent, type DepartureMap } from "@/features/live/departures"
 
 /** A finished pelada as listed on the public home. */
 export interface PublicMatchSummary {
@@ -61,6 +62,8 @@ export interface PublicRawPayload {
     created_at: string
   }[]
   borrowed: { round_id: string; team_id: string; player_id: string }[]
+  /** Players who left partway through: absent from `from_sequence` onward. */
+  departures: { team_id: string; player_id: string; from_sequence: number }[]
   /** Only the public-safe columns — the RPC never sends the rest. */
   players: {
     id: string
@@ -137,10 +140,20 @@ export function mapPublicPayload(raw: PublicRawPayload): PublicStatsData {
     createdAt: g.created_at,
   }))
 
+  // The RPC sends departures with team_id (not match_id); a team maps to its
+  // match, so the absence key matches what `isPresent` expects.
+  const matchByTeam = new Map(raw.teams.map((t) => [t.id, t.match_id]))
+  const departures: DepartureMap = new Map()
+  for (const d of raw.departures ?? []) {
+    const matchIdForTeam = matchByTeam.get(d.team_id)
+    if (matchIdForTeam) departures.set(departureKey(matchIdForTeam, d.player_id), d.from_sequence)
+  }
+
   const participants: ParticipantLite[] = []
   for (const r of raw.rounds) {
     for (const teamId of [r.home_team_id, r.away_team_id]) {
       for (const playerId of rosterByTeam.get(teamId) ?? []) {
+        if (!isPresent(departures, r.match_id, playerId, r.sequence)) continue
         participants.push({ roundId: r.id, teamId, playerId })
       }
     }

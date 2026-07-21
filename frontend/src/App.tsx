@@ -23,6 +23,7 @@ import { MatchListPage } from "@/features/matches/MatchListPage"
 import { MatchFormPage } from "@/features/matches/MatchFormPage"
 import { ParticipantSelectorPage } from "@/features/matches/ParticipantSelectorPage"
 import { TeamFormationPage, type TeamFormationBackContext } from "@/features/teams/TeamFormationPage"
+import { PlayerDeparturesPage } from "@/features/teams/PlayerDeparturesPage"
 import { LiveMatchPage } from "@/features/live/LiveMatchPage"
 import { MatchHistoryPage } from "@/features/live/MatchHistoryPage"
 import { MatchStatsPage } from "@/features/stats/MatchStatsPage"
@@ -227,6 +228,16 @@ function App() {
             element={
               <ProtectedRoute>
                 <TeamFormationRoute />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/matches/:id/saidas"
+            element={
+              <ProtectedRoute>
+                <AppShell title="Quem saiu da pelada">
+                  <PlayerDeparturesPage />
+                </AppShell>
               </ProtectedRoute>
             }
           />

@@ -1,6 +1,7 @@
 import type { Player, RoundDecidedBy, RoundResult, RoundStatus } from "@pelafut/shared"
 import { supabase } from "@/lib/supabaseClient"
 import type { GoalLite, ParticipantLite, RoundLite } from "@/features/stats/aggregate"
+import { departureKey, isPresent, type DepartureMap } from "@/features/live/departures"
 
 export interface StatsTeam {
   id: string
@@ -78,6 +79,19 @@ export async function fetchStatsRawData(
     return { data: null, error: goalsError?.message ?? borrowedError?.message ?? "Erro ao carregar dados" }
   }
 
+  // Players who left partway through: absent from `from_sequence` onward, so
+  // they drop out of later rounds' participants (but keep the earlier ones).
+  let departuresQuery = supabase.from("match_player_departures").select("match_id, player_id, from_sequence")
+  if (matchId) departuresQuery = departuresQuery.eq("match_id", matchId)
+  const { data: departureRows, error: departuresError } = await departuresQuery
+  if (departuresError) return { data: null, error: departuresError.message }
+  const departures: DepartureMap = new Map(
+    (departureRows ?? []).map((d) => [
+      departureKey(d.match_id as string, d.player_id as string),
+      d.from_sequence as number,
+    ])
+  )
+
   const rounds: RoundLite[] = (roundRows ?? []).map((r) => ({
     id: r.id as string,
     homeTeamId: r.home_team_id as string,
@@ -97,8 +111,11 @@ export async function fetchStatsRawData(
 
   const participants: ParticipantLite[] = []
   for (const r of roundRows ?? []) {
+    const matchIdForRound = r.match_id as string
+    const sequence = r.sequence as number
     for (const teamId of [r.home_team_id, r.away_team_id] as string[]) {
       for (const playerId of rosterByTeam.get(teamId) ?? []) {
+        if (!isPresent(departures, matchIdForRound, playerId, sequence)) continue
         participants.push({ roundId: r.id as string, teamId, playerId })
       }
     }

@@ -1,9 +1,10 @@
 import { useEffect, useState } from "react"
 import { useParams, useNavigate } from "react-router-dom"
-import { ArrowUpDown, Check, RefreshCw, Repeat, Settings2, Undo2 } from "lucide-react"
+import { ArrowUpDown, Check, RefreshCw, Repeat, Settings2, Undo2, UserMinus } from "lucide-react"
 import { teamCapacity, useTeamFormation, type FormationMethod } from "@/features/teams/useTeamFormation"
 import { TeamsBoard } from "@/features/teams/TeamsBoard"
 import { TeamOrderEditor } from "@/features/teams/TeamOrderEditor"
+import { useDepartedPlayerIds } from "@/features/teams/usePlayerDepartures"
 import { TeamColorSelect } from "@/features/teams/TeamColorSelect"
 import { TeamBalanceBar } from "@/features/teams/TeamBalanceBar"
 import { formationBalance } from "@/features/teams/teamStrength"
@@ -133,6 +134,8 @@ export function TeamFormationPage({
   // Reordering swaps the board out for a compact sortable list, so "hold to
   // drag" always means one thing at a time (a team, not a player).
   const [reordering, setReordering] = useState(false)
+  // Players who left the pelada — flagged on the board while it's in progress.
+  const departedIds = useDepartedPlayerIds(id ?? "", matchStatus === "in_progress")
 
   async function handleResetToDraft() {
     setResetConfirmOpen(false)
@@ -528,10 +531,20 @@ export function TeamFormationPage({
             teams={teams}
             playersPerTeam={playersPerTeam}
             balances={balances}
+            departedIds={departedIds}
             onMovePlayer={movePlayer}
             onSetCaptain={setCaptain}
             onSetColor={setTeamColor}
           />
+          {matchStatus === "in_progress" && id && (
+            <button
+              type="button"
+              onClick={() => navigate(`/matches/${id}/saidas`)}
+              className="flex items-center justify-center gap-1.5 self-center pt-1 text-xs text-muted-foreground hover:text-foreground"
+            >
+              <UserMinus className="size-3.5" /> Quem saiu da pelada
+            </button>
+          )}
         </div>
       )}
 

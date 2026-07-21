@@ -31,6 +31,7 @@ function PlayerChip({
   teamIndex,
   isCaptain,
   isSelected,
+  departed,
   onSetCaptain,
   onToggleSelect,
 }: {
@@ -38,6 +39,7 @@ function PlayerChip({
   teamIndex: number
   isCaptain: boolean
   isSelected: boolean
+  departed?: boolean
   onSetCaptain: () => void
   onToggleSelect: () => void
 }) {
@@ -69,8 +71,17 @@ function PlayerChip({
       >
         <Star className={cn("size-4", isCaptain ? "fill-primary text-primary" : "text-muted-foreground")} />
       </button>
-      <button type="button" onClick={onToggleSelect} className="min-h-8 flex-1 text-left uppercase">
+      <button
+        type="button"
+        onClick={onToggleSelect}
+        className={cn("min-h-8 flex-1 text-left uppercase", departed && "text-destructive")}
+      >
         {playerLabel(player)}
+        {departed && (
+          <span className="ml-1.5 rounded-full bg-destructive/15 px-1.5 py-0.5 text-[10px] font-medium text-destructive normal-case">
+            saiu
+          </span>
+        )}
       </button>
       <span className="flex size-8 shrink-0 items-center justify-center text-muted-foreground">
         <GripVertical className="size-4" />
@@ -101,6 +112,7 @@ function TeamColumn({
   playersPerTeam,
   balance,
   selectedPlayerId,
+  departedIds,
   onSetCaptain,
   onToggleSelect,
   onMoveSelectedHere,
@@ -111,6 +123,7 @@ function TeamColumn({
   playersPerTeam: number
   balance?: TeamBalance
   selectedPlayerId: string | null
+  departedIds?: Set<string>
   onSetCaptain: (teamIndex: number, playerId: string) => void
   onToggleSelect: (teamIndex: number, playerId: string) => void
   onMoveSelectedHere: (teamIndex: number) => void
@@ -155,6 +168,7 @@ function TeamColumn({
             teamIndex={teamIndex}
             isCaptain={team.captainId === player.id}
             isSelected={selectedPlayerId === player.id}
+            departed={departedIds?.has(player.id)}
             onSetCaptain={() => onSetCaptain(teamIndex, player.id)}
             onToggleSelect={() => onToggleSelect(teamIndex, player.id)}
           />
@@ -168,6 +182,7 @@ export function TeamsBoard({
   teams,
   playersPerTeam,
   balances,
+  departedIds,
   onMovePlayer,
   onSetCaptain,
   onSetColor,
@@ -175,6 +190,7 @@ export function TeamsBoard({
   teams: FormationTeam[]
   playersPerTeam: number
   balances?: TeamBalance[]
+  departedIds?: Set<string>
   onMovePlayer: (playerId: string, fromTeamIndex: number, toTeamIndex: number) => void
   onSetCaptain: (teamIndex: number, playerId: string) => void
   onSetColor: (teamIndex: number, hex: string) => void
@@ -247,6 +263,7 @@ export function TeamsBoard({
               playersPerTeam={playersPerTeam}
               balance={balances?.[i]}
               selectedPlayerId={selected?.playerId ?? null}
+              departedIds={departedIds}
               onSetCaptain={onSetCaptain}
               onToggleSelect={toggleSelect}
               onMoveSelectedHere={moveSelectedHere}
