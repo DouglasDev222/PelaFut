@@ -250,17 +250,24 @@ function RoundCard({
           )}
         </div>
 
-        <div className="flex items-center justify-center gap-3 text-sm font-medium">
-          <span className="flex items-center gap-1.5">
-            <TeamDot color={home?.color} /> Time {home?.number ?? "?"}
-          </span>
-          <span className="text-2xl font-extrabold tabular-nums">
-            {round.homeScore} <span className="text-base text-muted-foreground">x</span>{" "}
-            {round.awayScore}
-          </span>
-          <span className="flex items-center gap-1.5">
-            <TeamDot color={away?.color} /> Time {away?.number ?? "?"}
-          </span>
+        <div className="flex flex-col items-center gap-0.5">
+          <div className="flex items-center justify-center gap-3 text-sm font-medium">
+            <span className="flex items-center gap-1.5">
+              <TeamDot color={home?.color} /> Time {home?.number ?? "?"}
+            </span>
+            <span className="text-2xl font-extrabold tabular-nums">
+              {round.homeScore} <span className="text-base text-muted-foreground">x</span>{" "}
+              {round.awayScore}
+            </span>
+            <span className="flex items-center gap-1.5">
+              <TeamDot color={away?.color} /> Time {away?.number ?? "?"}
+            </span>
+          </div>
+          {(round.decidedBy === "penalties" || round.homePenalties + round.awayPenalties > 0) && (
+            <span className="text-xs font-medium text-muted-foreground tabular-nums">
+              pênaltis {round.homePenalties} - {round.awayPenalties}
+            </span>
+          )}
         </div>
 
         {goals.length === 0 ? (

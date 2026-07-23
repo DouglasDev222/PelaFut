@@ -24,6 +24,8 @@ export function MatchStatsPage() {
         goals={goals}
         playerStats={playerStats}
         playersById={playersById}
+        regulationSeconds={match.match_duration_minutes ? match.match_duration_minutes * 60 : undefined}
+        tieBothLeaveAllowed={match.tie_both_leave_allowed}
         hrefForPlayer={(playerId) => `/players/${playerId}/stats`}
       />
     </div>

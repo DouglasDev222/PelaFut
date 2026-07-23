@@ -2,6 +2,7 @@ import type { Player, RoundDecidedBy, RoundResult, RoundStatus } from "@pelafut/
 import { supabase } from "@/lib/supabaseClient"
 import type { GoalLite, ParticipantLite, RoundLite } from "@/features/stats/aggregate"
 import { departureKey, isPresent, type DepartureMap } from "@/features/live/departures"
+import { penaltyTally } from "@/features/stats/aggregate"
 
 export interface StatsTeam {
   id: string
@@ -20,6 +21,9 @@ export interface StatsRound extends RoundLite {
   finishedAt: string | null
   pausedAt: string | null
   pausedSeconds: number
+  /** Successful penalty kicks per side, when the round went to a shootout. */
+  homePenalties: number
+  awayPenalties: number
 }
 
 export interface RawStatsData {
@@ -72,15 +76,23 @@ export async function fetchStatsRawData(
   if (roundsError) return { data: null, error: roundsError.message }
 
   const roundIds = (roundRows ?? []).map((r) => r.id as string)
-  const [{ data: goalRows, error: goalsError }, { data: borrowedRows, error: borrowedError }] =
+  const [
+    { data: goalRows, error: goalsError },
+    { data: borrowedRows, error: borrowedError },
+    { data: penaltyRows, error: penaltyError },
+  ] =
     roundIds.length > 0
       ? await Promise.all([
           supabase.from("match_round_goals").select("*").in("round_id", roundIds).order("created_at"),
           supabase.from("match_round_borrowed_players").select("*").in("round_id", roundIds),
+          supabase.from("match_round_penalty_kicks").select("round_id, team_id, scored").in("round_id", roundIds),
         ])
-      : [{ data: [], error: null }, { data: [], error: null }]
-  if (goalsError || borrowedError) {
-    return { data: null, error: goalsError?.message ?? borrowedError?.message ?? "Erro ao carregar dados" }
+      : [{ data: [], error: null }, { data: [], error: null }, { data: [], error: null }]
+  if (goalsError || borrowedError || penaltyError) {
+    return {
+      data: null,
+      error: goalsError?.message ?? borrowedError?.message ?? penaltyError?.message ?? "Erro ao carregar dados",
+    }
   }
 
   // Players who left partway through: absent from `from_sequence` onward, so
@@ -139,6 +151,10 @@ export async function fetchStatsRawData(
     const awayScore = (goalRows ?? []).filter(
       (g) => g.round_id === r.id && g.team_id === r.away_team_id
     ).length
+    const kicks = (penaltyRows ?? [])
+      .filter((k) => k.round_id === r.id)
+      .map((k) => ({ teamId: k.team_id as string, scored: k.scored as boolean }))
+    const pens = penaltyTally(kicks, r.home_team_id as string, r.away_team_id as string)
     return {
       id: r.id as string,
       matchId: r.match_id as string,
@@ -154,6 +170,8 @@ export async function fetchStatsRawData(
       finishedAt: (r.finished_at as string | null) ?? null,
       pausedAt: (r.paused_at as string | null) ?? null,
       pausedSeconds: (r.paused_seconds as number | null) ?? 0,
+      homePenalties: pens.home,
+      awayPenalties: pens.away,
     }
   })
 

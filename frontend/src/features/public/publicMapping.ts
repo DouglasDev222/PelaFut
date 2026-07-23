@@ -2,6 +2,7 @@ import type { Player, RoundDecidedBy, RoundResult, RoundStatus } from "@pelafut/
 import {
   computeAccountPlayerStats,
   computePlayerStats,
+  penaltyTally,
   type AccountPlayerLine,
   type GoalLite,
   type ParticipantLite,
@@ -26,16 +27,32 @@ export interface PublicAccountSummary {
   peladas: PublicMatchSummary[]
 }
 
+export interface PublicMatchInfo {
+  id: string
+  nome: string
+  data: string
+  /** Regulation length (minutes) — for capping the average time; null when goals-only. */
+  durationMinutes: number | null
+  /** Whether a tie sends both teams off (for the "ambos saíram" label). */
+  tieBothLeaveAllowed: boolean
+}
+
 export interface PublicStatsData extends RawStatsData {
   titulo: string | null
   /** Finished peladas in the payload — used to label per-pelada breakdowns. */
-  matches: { id: string; nome: string; data: string }[]
+  matches: PublicMatchInfo[]
 }
 
 /** Shape returned by the `pelada_publica_dados` RPC. */
 export interface PublicRawPayload {
   titulo: string | null
-  peladas: { id: string; nome: string; data: string }[]
+  peladas: {
+    id: string
+    nome: string
+    data: string
+    duration_minutes?: number | null
+    tie_both_leave_allowed?: boolean | null
+  }[]
   teams: {
     id: string
     match_id: string
@@ -66,6 +83,8 @@ export interface PublicRawPayload {
     created_at: string
   }[]
   borrowed: { round_id: string; team_id: string; player_id: string }[]
+  /** Penalty shootout kicks, for the "(pênaltis 4-3)" score. */
+  penalties?: { round_id: string; team_id: string; scored: boolean }[]
   /** Players who left partway through: absent from `from_sequence` onward. */
   departures: { team_id: string; player_id: string; from_sequence: number }[]
   /** Only the public-safe columns — the RPC never sends the rest. */
@@ -169,7 +188,12 @@ export function mapPublicPayload(raw: PublicRawPayload): PublicStatsData {
   const scoreFor = (roundId: string, teamId: string) =>
     raw.goals.filter((g) => g.round_id === roundId && g.team_id === teamId).length
 
-  const statsRounds: StatsRound[] = raw.rounds.map((r) => ({
+  const statsRounds: StatsRound[] = raw.rounds.map((r) => {
+    const kicks = (raw.penalties ?? [])
+      .filter((k) => k.round_id === r.id)
+      .map((k) => ({ teamId: k.team_id, scored: k.scored }))
+    const pens = penaltyTally(kicks, r.home_team_id, r.away_team_id)
+    return {
     id: r.id,
     matchId: r.match_id,
     sequence: r.sequence,
@@ -180,15 +204,24 @@ export function mapPublicPayload(raw: PublicRawPayload): PublicStatsData {
     decidedBy: r.decided_by as RoundDecidedBy | null,
     homeScore: scoreFor(r.id, r.home_team_id),
     awayScore: scoreFor(r.id, r.away_team_id),
+    homePenalties: pens.home,
+    awayPenalties: pens.away,
     startedAt: r.started_at ?? "",
     finishedAt: r.finished_at ?? null,
     pausedAt: r.paused_at ?? null,
     pausedSeconds: r.paused_seconds ?? 0,
-  }))
+    }
+  })
 
   return {
     titulo: raw.titulo,
-    matches: raw.peladas ?? [],
+    matches: (raw.peladas ?? []).map((p) => ({
+      id: p.id,
+      nome: p.nome,
+      data: p.data,
+      durationMinutes: p.duration_minutes ?? null,
+      tieBothLeaveAllowed: p.tie_both_leave_allowed ?? false,
+    })),
     rounds,
     statsRounds,
     goals,

@@ -113,10 +113,24 @@ function RankingList({
   )
 }
 
-const DECIDED_BY_LABEL: Record<string, string> = {
-  regulation: "tempo normal",
-  penalties: "pênaltis",
-  direct: "vencedor direto",
+/**
+ * How a round ended, for the history header. Beyond "tempo normal", it names
+ * the special outcomes the user asked to see: penalties, a direct win (and to
+ * whom), and a tie where both teams left the court.
+ */
+function outcomeLabel(
+  round: StatsRound,
+  homeNumber: number | undefined,
+  awayNumber: number | undefined,
+  tieBothLeaveAllowed: boolean
+): string {
+  if (round.decidedBy === "penalties") return "pênaltis"
+  if (round.decidedBy === "direct") {
+    const winner = round.result === "home_win" ? homeNumber : awayNumber
+    return `vitória direta · Time ${winner ?? "?"}`
+  }
+  if (round.result === "tie") return tieBothLeaveAllowed ? "ambos saíram" : "empate"
+  return "tempo normal"
 }
 
 function playerName(playersById: Map<string, { name: string; nickname: string | null }>, id: string) {
@@ -142,6 +156,7 @@ function RoundHistoryCard({
   goals,
   playersById,
   rosterFor,
+  tieBothLeaveAllowed,
   hrefForPlayer,
 }: {
   round: StatsRound
@@ -150,24 +165,13 @@ function RoundHistoryCard({
   goals: GoalLite[]
   playersById: Map<string, Player>
   rosterFor: (teamId: string) => Player[]
+  tieBothLeaveAllowed: boolean
   hrefForPlayer?: (playerId: string) => string
 }) {
   const [showRoster, setShowRoster] = useState(false)
   const duration = roundDurationSeconds(round)
-
-  const homeGoals = goals.filter((g) => g.teamId === homeTeam?.id)
-  const awayGoals = goals.filter((g) => g.teamId === awayTeam?.id)
-
-  function goalLine(g: GoalLite) {
-    const scorerName = g.playerId ? playerName(playersById, g.playerId) : "Ninguém/contra"
-    const assistName = g.assistPlayerId ? playerName(playersById, g.assistPlayerId) : null
-    return (
-      <span className="flex flex-col">
-        <span className="font-medium text-foreground">⚽ {scorerName}</span>
-        {assistName && <span className="text-muted-foreground">assist. {assistName}</span>}
-      </span>
-    )
-  }
+  const hasPenalties = round.decidedBy === "penalties" || round.homePenalties + round.awayPenalties > 0
+  const label = outcomeLabel(round, homeTeam?.number, awayTeam?.number, tieBothLeaveAllowed)
 
   return (
     <Card>
@@ -176,24 +180,50 @@ function RoundHistoryCard({
           <span>Jogo {round.sequence}</span>
           <span className="flex items-center gap-1.5">
             {duration != null && <span className="tabular-nums">⏱ {formatDuration(duration)}</span>}
-            {round.decidedBy && <span>· {DECIDED_BY_LABEL[round.decidedBy] ?? round.decidedBy}</span>}
+            <span>· {label}</span>
           </span>
         </div>
 
-        <div className="flex items-center justify-center gap-4">
-          <TeamLabel team={homeTeam} />
-          <span className="text-3xl font-extrabold tabular-nums">
-            {round.homeScore} <span className="text-lg font-medium text-muted-foreground">x</span> {round.awayScore}
-          </span>
-          <TeamLabel team={awayTeam} />
+        <div className="flex flex-col items-center gap-0.5">
+          <div className="flex items-center justify-center gap-4">
+            <TeamLabel team={homeTeam} />
+            <span className="text-3xl font-extrabold tabular-nums">
+              {round.homeScore} <span className="text-lg font-medium text-muted-foreground">x</span> {round.awayScore}
+            </span>
+            <TeamLabel team={awayTeam} />
+          </div>
+          {hasPenalties && (
+            <span className="text-xs font-medium text-muted-foreground tabular-nums">
+              pênaltis {round.homePenalties} - {round.awayPenalties}
+            </span>
+          )}
         </div>
 
         {goals.length > 0 && (
-          // Each team's goals hug its own side (home left, away right) so it's
-          // obvious at a glance who scored what — no need to read "Time N".
-          <div className="grid grid-cols-2 gap-x-4 border-t pt-2 text-xs">
-            <div className="flex flex-col gap-1 text-left">{homeGoals.map((g) => <span key={g.id}>{goalLine(g)}</span>)}</div>
-            <div className="flex flex-col items-end gap-1 text-right">{awayGoals.map((g) => <span key={g.id}>{goalLine(g)}</span>)}</div>
+          // One goal per row, in the order they were scored (top = first), each
+          // hugging its own team's side with the other side left blank. So you
+          // read the sequence downward AND see which team scored at a glance.
+          <div className="flex flex-col gap-1.5 border-t pt-2 text-xs">
+            {goals.map((g) => {
+              const isHome = g.teamId === homeTeam?.id
+              const scorerName = g.playerId ? playerName(playersById, g.playerId) : "Ninguém/contra"
+              const assistName = g.assistPlayerId ? playerName(playersById, g.assistPlayerId) : null
+              return (
+                <div key={g.id} className="grid grid-cols-2 gap-x-4">
+                  <div
+                    className={cn(
+                      "flex min-w-0 flex-col",
+                      isHome ? "text-left" : "col-start-2 items-end text-right"
+                    )}
+                  >
+                    <span className="truncate font-medium text-foreground">⚽ {scorerName}</span>
+                    {assistName && (
+                      <span className="truncate text-muted-foreground">assist. {assistName}</span>
+                    )}
+                  </div>
+                </div>
+              )
+            })}
           </div>
         )}
 
@@ -355,6 +385,8 @@ export function MatchStatsView({
   goals,
   playerStats,
   playersById,
+  regulationSeconds,
+  tieBothLeaveAllowed = false,
   hrefForPlayer,
 }: {
   matchName: string
@@ -364,6 +396,11 @@ export function MatchStatsView({
   goals: GoalLite[]
   playerStats: PlayerStatLine[]
   playersById: Map<string, Player>
+  /** Regulation length in seconds — caps each game's time in the average, so
+   * a game that ran into stoppage doesn't inflate it. Omit when goals-only. */
+  regulationSeconds?: number
+  /** Whether a tie sends both teams off — drives the "ambos saíram" label. */
+  tieBothLeaveAllowed?: boolean
   /** When given, player names become links to their profile. */
   hrefForPlayer?: (playerId: string) => string
 }) {
@@ -399,10 +436,13 @@ export function MatchStatsView({
     finishedRounds.length > 0 ? (totalGoals / finishedRounds.length).toFixed(1) : "0.0"
 
   // Average playing time — only over rounds that actually ran a clock, so a
-  // goals-only pelada (no clock) simply doesn't get the tile.
+  // goals-only pelada (no clock) simply doesn't get the tile. Each game is
+  // capped at the regulation length: a game that ran into stoppage counts only
+  // up to the configured time (e.g. 7:00), so the average reflects the format.
   const durations = finishedRounds
     .map((r) => roundDurationSeconds(r))
     .filter((d): d is number => d != null)
+    .map((d) => (regulationSeconds != null ? Math.min(d, regulationSeconds) : d))
   const avgDurationSecs =
     durations.length > 0 ? Math.round(durations.reduce((a, b) => a + b, 0) / durations.length) : null
 
@@ -686,6 +726,7 @@ export function MatchStatsView({
                 goals={goals.filter((g) => g.roundId === r.id)}
                 playersById={playersById}
                 rosterFor={(teamId) => rosterFor(r.id, teamId)}
+                tieBothLeaveAllowed={tieBothLeaveAllowed}
                 hrefForPlayer={hrefForPlayer}
               />
             ))}

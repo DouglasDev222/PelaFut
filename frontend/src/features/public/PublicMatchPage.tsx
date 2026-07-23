@@ -28,6 +28,8 @@ export function PublicMatchPage() {
         goals={data.goals}
         playerStats={playerStats}
         playersById={data.playersById}
+        regulationSeconds={pelada.durationMinutes ? pelada.durationMinutes * 60 : undefined}
+        tieBothLeaveAllowed={pelada.tieBothLeaveAllowed}
         hrefForPlayer={(id) => `/pelada/${codigo}/jogador/${id}`}
       />
     </PublicShell>

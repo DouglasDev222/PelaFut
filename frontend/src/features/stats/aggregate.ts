@@ -258,6 +258,22 @@ export interface TeamPlayersStats {
   topAssisterAssists: number
 }
 
+/** Successful penalty kicks per side of a shootout, for the "(pênaltis 4-3)" score. */
+export function penaltyTally(
+  kicks: { teamId: string; scored: boolean }[],
+  homeTeamId: string,
+  awayTeamId: string
+): { home: number; away: number } {
+  let home = 0
+  let away = 0
+  for (const k of kicks) {
+    if (!k.scored) continue
+    if (k.teamId === homeTeamId) home += 1
+    else if (k.teamId === awayTeamId) away += 1
+  }
+  return { home, away }
+}
+
 /** The timing fields a finished round carries, straight from `match_rounds`. */
 export interface RoundTiming {
   startedAt: string
