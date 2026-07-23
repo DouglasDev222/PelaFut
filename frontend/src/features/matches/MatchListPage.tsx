@@ -35,20 +35,20 @@ const STATUS_TONES: Record<MatchStatus, StatusTone> = {
   finished: "success",
 }
 
-type ActionKey = "participants" | "teams" | "live" | "stats" | "edit"
+type ActionKey = "participants" | "teams" | "live" | "history" | "stats" | "edit"
 
 function actionsFor(match: Match): Record<ActionKey, { label: string; to: string; show: boolean }> {
   const liveLabel =
     match.status === "finished" ? "Ver partida" : match.status === "teams_formed" ? "Iniciar jogo" : "Partida ao vivo"
+  const played = match.status === "in_progress" || match.status === "finished"
   return {
     participants: { label: "Participantes", to: `/matches/${match.id}/participants`, show: true },
     teams: { label: "Times", to: `/matches/${match.id}/teams`, show: true },
     live: { label: liveLabel, to: `/matches/${match.id}/live`, show: match.status !== "draft" },
-    stats: {
-      label: "Estatísticas",
-      to: `/matches/${match.id}/stats`,
-      show: match.status === "in_progress" || match.status === "finished",
-    },
+    // Reachable even after the pelada ends — it's where a game stuck "in
+    // progress" gets closed and goal authorship gets fixed.
+    history: { label: "Histórico de jogos", to: `/matches/${match.id}/jogos`, show: played },
+    stats: { label: "Estatísticas", to: `/matches/${match.id}/stats`, show: played },
     edit: { label: "Editar", to: `/matches/${match.id}/edit`, show: true },
   }
 }

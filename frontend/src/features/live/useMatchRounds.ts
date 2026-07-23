@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react"
-import type { Player } from "@pelafut/shared"
+import type { Player, RoundResult } from "@pelafut/shared"
 import { supabase } from "@/lib/supabaseClient"
 import { fetchStatsRawData, type StatsRound, type StatsTeam } from "@/features/stats/fetchRaw"
 import type { GoalLite, ParticipantLite } from "@/features/stats/aggregate"
@@ -75,6 +75,51 @@ export function useMatchRounds(matchId: string) {
     return { error: null }
   }
 
+  /**
+   * Manually finishes a round that got stuck "in progress" — e.g. a game that
+   * was really played but never ended, or one left dangling. Just marks it
+   * finished with the given result so it counts in the standings/stats; it does
+   * NOT rotate the queue (this is a cleanup, not a live turn). `finished_at` is
+   * only stamped if it's still empty, to preserve the original time when known.
+   */
+  async function closeRound(roundId: string, result: RoundResult) {
+    setError(null)
+    const { error: updateError } = await supabase
+      .from("match_rounds")
+      .update({
+        status: "finished",
+        result,
+        decided_by: "regulation",
+        finished_at: new Date().toISOString(),
+      })
+      .eq("id", roundId)
+    if (updateError) {
+      setError(updateError.message)
+      return { error: updateError.message }
+    }
+    await load()
+    return { error: null }
+  }
+
+  /**
+   * Deletes a round entirely — for a phantom game that never happened (the fresh
+   * "next game" left over when a pelada is closed). Removes its goals, borrows
+   * and penalty kicks first, then the round.
+   */
+  async function deleteRound(roundId: string) {
+    setError(null)
+    await supabase.from("match_round_penalty_kicks").delete().eq("round_id", roundId)
+    await supabase.from("match_round_borrowed_players").delete().eq("round_id", roundId)
+    await supabase.from("match_round_goals").delete().eq("round_id", roundId)
+    const { error: deleteError } = await supabase.from("match_rounds").delete().eq("id", roundId)
+    if (deleteError) {
+      setError(deleteError.message)
+      return { error: deleteError.message }
+    }
+    await load()
+    return { error: null }
+  }
+
   return {
     rounds,
     goals,
@@ -82,6 +127,8 @@ export function useMatchRounds(matchId: string) {
     playersById,
     squadFor,
     updateGoalAuthorship,
+    closeRound,
+    deleteRound,
     loading,
     error,
     reload: load,

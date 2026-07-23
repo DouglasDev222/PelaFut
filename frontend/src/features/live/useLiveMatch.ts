@@ -1003,6 +1003,18 @@ export function useLiveMatch(matchId: string) {
       return { error: message }
     }
 
+    // A fresh "next game" is auto-created after every round, so the current one
+    // here was never played (canFinishMatch guarantees it isn't underway).
+    // Drop it instead of leaving it stuck "in progress" forever on a finished
+    // pelada. Its snapshot is void too.
+    if (currentRound) {
+      await supabase.from("match_round_penalty_kicks").delete().eq("round_id", currentRound.id)
+      await supabase.from("match_round_borrowed_players").delete().eq("round_id", currentRound.id)
+      await supabase.from("match_round_goals").delete().eq("round_id", currentRound.id)
+      await supabase.from("match_rounds").delete().eq("id", currentRound.id)
+      await persistUndoSnapshot(null)
+    }
+
     const { error: statusError } = await supabase
       .from("matches")
       .update({ status: "finished" })
