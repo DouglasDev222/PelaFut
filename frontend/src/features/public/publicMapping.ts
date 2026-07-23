@@ -52,6 +52,10 @@ export interface PublicRawPayload {
     status: string
     result: string | null
     decided_by: string | null
+    started_at?: string | null
+    finished_at?: string | null
+    paused_at?: string | null
+    paused_seconds?: number | null
   }[]
   goals: {
     id: string
@@ -176,6 +180,10 @@ export function mapPublicPayload(raw: PublicRawPayload): PublicStatsData {
     decidedBy: r.decided_by as RoundDecidedBy | null,
     homeScore: scoreFor(r.id, r.home_team_id),
     awayScore: scoreFor(r.id, r.away_team_id),
+    startedAt: r.started_at ?? "",
+    finishedAt: r.finished_at ?? null,
+    pausedAt: r.paused_at ?? null,
+    pausedSeconds: r.paused_seconds ?? 0,
   }))
 
   return {

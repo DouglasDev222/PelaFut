@@ -4,7 +4,7 @@ import { History, Pencil } from "lucide-react"
 import type { Player, RoundResult } from "@pelafut/shared"
 import { useMatchRounds } from "@/features/live/useMatchRounds"
 import type { StatsRound, StatsTeam } from "@/features/stats/fetchRaw"
-import type { GoalLite } from "@/features/stats/aggregate"
+import { roundDurationSeconds, type GoalLite } from "@/features/stats/aggregate"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
 import { Dialog, DialogPopup, DialogTitle } from "@/components/ui/dialog"
@@ -17,6 +17,12 @@ const DECIDED_BY_LABEL: Record<string, string> = {
   regulation: "tempo normal",
   penalties: "pênaltis",
   direct: "vencedor direto",
+}
+
+function formatDuration(secs: number): string {
+  const m = Math.floor(secs / 60)
+  const s = secs % 60
+  return `${m}:${String(s).padStart(2, "0")}`
 }
 
 function playerLabel(p: Player | undefined) {
@@ -227,6 +233,7 @@ function RoundCard({
   const home = teams.find((t) => t.id === round.homeTeamId)
   const away = teams.find((t) => t.id === round.awayTeamId)
   const live = round.status !== "finished"
+  const duration = live ? null : roundDurationSeconds(round)
 
   return (
     <Card className={cn(live && "border-warning/50")}>
@@ -236,7 +243,10 @@ function RoundCard({
           {live ? (
             <StatusBadge label="Em andamento" tone="warning" pulse />
           ) : (
-            round.decidedBy && <span>{DECIDED_BY_LABEL[round.decidedBy] ?? round.decidedBy}</span>
+            <span className="flex items-center gap-1.5">
+              {duration != null && <span className="tabular-nums">⏱ {formatDuration(duration)}</span>}
+              {round.decidedBy && <span>· {DECIDED_BY_LABEL[round.decidedBy] ?? round.decidedBy}</span>}
+            </span>
           )}
         </div>
 

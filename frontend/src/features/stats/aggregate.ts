@@ -249,11 +249,36 @@ export interface TeamPlayersStats {
   teamId: string
   /** Everyone who played for this team, sorted by goals then assists. */
   players: TeamPlayerLine[]
+  /** Goals for this team with no scorer credited ("ninguém / gol contra"). */
+  noScorerGoals: number
   /** All players tied at the team's top goal count (empty if nobody scored). */
   topScorerIds: string[]
   topScorerGoals: number
   topAssisterIds: string[]
   topAssisterAssists: number
+}
+
+/** The timing fields a finished round carries, straight from `match_rounds`. */
+export interface RoundTiming {
+  startedAt: string
+  finishedAt: string | null
+  pausedAt: string | null
+  pausedSeconds: number
+}
+
+/**
+ * How long a finished round actually ran, in seconds — or null when there's no
+ * meaningful clock (goals-only peladas never start it, so it reads ~0). The
+ * clock is derived from wall-clock fields, so at finish the reading is frozen
+ * at `paused_at` (if it ended paused) or `finished_at` (if it was still
+ * running), minus the time spent paused.
+ */
+export function roundDurationSeconds(r: RoundTiming): number | null {
+  if (!r.finishedAt) return null
+  const started = new Date(r.startedAt).getTime()
+  const ref = r.pausedAt ? new Date(r.pausedAt).getTime() : new Date(r.finishedAt).getTime()
+  const secs = Math.round((ref - started) / 1000 - (r.pausedSeconds ?? 0))
+  return secs > 0 ? secs : null
 }
 
 /**
@@ -275,6 +300,8 @@ export function computeTeamPlayerStats(
   const roundsById = new Map(rounds.map((r) => [r.id, r] as const))
   // teamId -> playerId -> line
   const byTeam = new Map<string, Map<string, TeamPlayerLine>>()
+  // teamId -> goals with no credited scorer (ninguém / gol contra)
+  const noScorerByTeam = new Map<string, number>()
 
   function lineFor(teamId: string, playerId: string): TeamPlayerLine {
     let team = byTeam.get(teamId)
@@ -290,6 +317,10 @@ export function computeTeamPlayerStats(
     return line
   }
 
+  function ensureTeam(teamId: string) {
+    if (!byTeam.has(teamId)) byTeam.set(teamId, new Map())
+  }
+
   for (const p of participants) {
     const round = roundsById.get(p.roundId)
     if (!round || round.status !== "finished") continue
@@ -300,6 +331,10 @@ export function computeTeamPlayerStats(
     const round = roundsById.get(g.roundId)
     if (!round || round.status !== "finished") continue
     if (g.playerId) lineFor(g.teamId, g.playerId).goals += 1
+    else {
+      ensureTeam(g.teamId)
+      noScorerByTeam.set(g.teamId, (noScorerByTeam.get(g.teamId) ?? 0) + 1)
+    }
     if (g.assistPlayerId) lineFor(g.teamId, g.assistPlayerId).assists += 1
   }
 
@@ -313,6 +348,7 @@ export function computeTeamPlayerStats(
     result.push({
       teamId,
       players,
+      noScorerGoals: noScorerByTeam.get(teamId) ?? 0,
       topScorerGoals,
       topScorerIds: topScorerGoals > 0 ? players.filter((p) => p.goals === topScorerGoals).map((p) => p.playerId) : [],
       topAssisterAssists,

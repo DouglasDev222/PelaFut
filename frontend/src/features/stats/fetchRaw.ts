@@ -16,6 +16,10 @@ export interface StatsRound extends RoundLite {
   decidedBy: RoundDecidedBy | null
   homeScore: number
   awayScore: number
+  startedAt: string
+  finishedAt: string | null
+  pausedAt: string | null
+  pausedSeconds: number
 }
 
 export interface RawStatsData {
@@ -146,6 +150,10 @@ export async function fetchStatsRawData(
       decidedBy: r.decided_by as RoundDecidedBy | null,
       homeScore,
       awayScore,
+      startedAt: r.started_at as string,
+      finishedAt: (r.finished_at as string | null) ?? null,
+      pausedAt: (r.paused_at as string | null) ?? null,
+      pausedSeconds: (r.paused_seconds as number | null) ?? 0,
     }
   })
 

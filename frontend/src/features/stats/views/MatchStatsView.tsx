@@ -5,15 +5,24 @@ import type { Player } from "@pelafut/shared"
 import {
   computeTeamPlayerStats,
   computeTeamStandings,
+  roundDurationSeconds,
   type GoalLite,
   type ParticipantLite,
   type PlayerStatLine,
+  type TeamStandingLine,
 } from "@/features/stats/aggregate"
 import type { StatsRound, StatsTeam } from "@/features/stats/fetchRaw"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Tabs, TabsList, TabsPanel, TabsTab } from "@/components/ui/tabs"
 import { Legend, Th } from "@/features/stats/StatTable"
 import { cn } from "@/lib/utils"
+
+/** Compact m:ss for a round's playing time (e.g. 7:05). */
+function formatDuration(secs: number): string {
+  const m = Math.floor(secs / 60)
+  const s = secs % 60
+  return `${m}:${String(s).padStart(2, "0")}`
+}
 
 function StatTile({ value, label }: { value: string | number; label: string }) {
   return (
@@ -144,13 +153,31 @@ function RoundHistoryCard({
   hrefForPlayer?: (playerId: string) => string
 }) {
   const [showRoster, setShowRoster] = useState(false)
+  const duration = roundDurationSeconds(round)
+
+  const homeGoals = goals.filter((g) => g.teamId === homeTeam?.id)
+  const awayGoals = goals.filter((g) => g.teamId === awayTeam?.id)
+
+  function goalLine(g: GoalLite) {
+    const scorerName = g.playerId ? playerName(playersById, g.playerId) : "Ninguém/contra"
+    const assistName = g.assistPlayerId ? playerName(playersById, g.assistPlayerId) : null
+    return (
+      <span className="flex flex-col">
+        <span className="font-medium text-foreground">⚽ {scorerName}</span>
+        {assistName && <span className="text-muted-foreground">assist. {assistName}</span>}
+      </span>
+    )
+  }
 
   return (
     <Card>
       <CardContent className="flex flex-col gap-3 py-3">
         <div className="flex items-center justify-between text-xs text-muted-foreground">
           <span>Jogo {round.sequence}</span>
-          {round.decidedBy && <span>{DECIDED_BY_LABEL[round.decidedBy] ?? round.decidedBy}</span>}
+          <span className="flex items-center gap-1.5">
+            {duration != null && <span className="tabular-nums">⏱ {formatDuration(duration)}</span>}
+            {round.decidedBy && <span>· {DECIDED_BY_LABEL[round.decidedBy] ?? round.decidedBy}</span>}
+          </span>
         </div>
 
         <div className="flex items-center justify-center gap-4">
@@ -162,20 +189,11 @@ function RoundHistoryCard({
         </div>
 
         {goals.length > 0 && (
-          <div className="flex flex-col gap-1 border-t pt-2 text-xs">
-            {goals.map((g) => {
-              const team = g.teamId === homeTeam?.id ? homeTeam : awayTeam
-              const scorerName = g.playerId ? playerName(playersById, g.playerId) : "Ninguém/contra"
-              const assistName = g.assistPlayerId ? playerName(playersById, g.assistPlayerId) : null
-              return (
-                <p key={g.id} className="flex items-center gap-1 text-muted-foreground">
-                  <span>⚽</span>
-                  <span className="font-medium text-foreground">{scorerName}</span>
-                  {assistName && <span>· assist. {assistName}</span>}
-                  <span>— Time {team?.number ?? "?"}</span>
-                </p>
-              )
-            })}
+          // Each team's goals hug its own side (home left, away right) so it's
+          // obvious at a glance who scored what — no need to read "Time N".
+          <div className="grid grid-cols-2 gap-x-4 border-t pt-2 text-xs">
+            <div className="flex flex-col gap-1 text-left">{homeGoals.map((g) => <span key={g.id}>{goalLine(g)}</span>)}</div>
+            <div className="flex flex-col items-end gap-1 text-right">{awayGoals.map((g) => <span key={g.id}>{goalLine(g)}</span>)}</div>
           </div>
         )}
 
@@ -223,6 +241,8 @@ function RoundHistoryCard({
 function TeamBreakdownCard({
   team,
   players,
+  noScorerGoals,
+  standing,
   topScorerIds,
   topScorerGoals,
   topAssisterIds,
@@ -232,6 +252,8 @@ function TeamBreakdownCard({
 }: {
   team: StatsTeam | undefined
   players: { playerId: string; goals: number; assists: number }[]
+  noScorerGoals: number
+  standing: TeamStandingLine | undefined
   topScorerIds: string[]
   topScorerGoals: number
   topAssisterIds: string[]
@@ -245,7 +267,25 @@ function TeamBreakdownCard({
   }
   return (
     <div className="flex flex-col gap-2 rounded-lg border p-3">
-      <TeamLabel team={team} />
+      <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1">
+        <TeamLabel team={team} />
+        {standing && (
+          <div className="flex items-center gap-2.5 text-xs text-muted-foreground">
+            <span className="tabular-nums">
+              ⚽ <strong className="text-foreground">{standing.goalsFor}</strong>
+            </span>
+            <span className="tabular-nums">
+              V<strong className="text-foreground">{standing.wins}</strong>
+            </span>
+            <span className="tabular-nums">
+              E<strong className="text-foreground">{standing.draws}</strong>
+            </span>
+            <span className="tabular-nums">
+              D<strong className="text-foreground">{standing.losses}</strong>
+            </span>
+          </div>
+        )}
+      </div>
       <div className="grid grid-cols-2 gap-2 text-xs">
         <div className="flex flex-col">
           <span className="text-muted-foreground">
@@ -271,7 +311,7 @@ function TeamBreakdownCard({
         </div>
       </div>
 
-      {scored.length > 0 && (
+      {(scored.length > 0 || noScorerGoals > 0) && (
         <div className="flex flex-col gap-0.5 border-t pt-2 text-sm">
           {scored.map((p) => (
             <div key={p.playerId} className="flex items-center justify-between gap-2">
@@ -291,6 +331,12 @@ function TeamBreakdownCard({
               </span>
             </div>
           ))}
+          {noScorerGoals > 0 && (
+            <div className="flex items-center justify-between gap-2 text-muted-foreground">
+              <span className="italic">Ninguém / gol contra</span>
+              <span className="shrink-0 text-xs tabular-nums">⚽ {noScorerGoals}</span>
+            </div>
+          )}
         </div>
       )}
     </div>
@@ -348,8 +394,17 @@ export function MatchStatsView({
         )
       : standings
   const teamsById = new Map(teams.map((t) => [t.id, t]))
+  const standingsById = new Map(standings.map((s) => [s.teamId, s]))
   const goalsPerGame =
     finishedRounds.length > 0 ? (totalGoals / finishedRounds.length).toFixed(1) : "0.0"
+
+  // Average playing time — only over rounds that actually ran a clock, so a
+  // goals-only pelada (no clock) simply doesn't get the tile.
+  const durations = finishedRounds
+    .map((r) => roundDurationSeconds(r))
+    .filter((d): d is number => d != null)
+  const avgDurationSecs =
+    durations.length > 0 ? Math.round(durations.reduce((a, b) => a + b, 0) / durations.length) : null
 
   // Per-team breakdown, kept in the teams' own order (Time 1, 2, 3…) so it
   // lines up with how they're named everywhere else, not by rank.
@@ -370,10 +425,20 @@ export function MatchStatsView({
       <p className="text-lg font-semibold">{matchName}</p>
 
       <Card>
-        <CardContent className="grid grid-cols-3 divide-x divide-border py-4">
+        <CardContent
+          className={cn(
+            "grid gap-y-4 py-4",
+            avgDurationSecs != null
+              ? "grid-cols-2 sm:grid-cols-4 sm:divide-x sm:divide-border"
+              : "grid-cols-3 divide-x divide-border"
+          )}
+        >
           <StatTile value={finishedRounds.length} label={finishedRounds.length === 1 ? "jogo" : "jogos"} />
           <StatTile value={totalGoals} label={totalGoals === 1 ? "gol" : "gols"} />
           <StatTile value={goalsPerGame} label="gols/jogo" />
+          {avgDurationSecs != null && (
+            <StatTile value={formatDuration(avgDurationSecs)} label="média/jogo" />
+          )}
         </CardContent>
       </Card>
 
@@ -596,6 +661,8 @@ export function MatchStatsView({
                     key={team.id}
                     team={team}
                     players={ts?.players ?? []}
+                    noScorerGoals={ts?.noScorerGoals ?? 0}
+                    standing={standingsById.get(team.id)}
                     topScorerIds={ts?.topScorerIds ?? []}
                     topScorerGoals={ts?.topScorerGoals ?? 0}
                     topAssisterIds={ts?.topAssisterIds ?? []}
