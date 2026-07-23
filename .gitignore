@@ -15,3 +15,6 @@ coverage/
 
 # Backups locais do banco (dados reais — nunca versionar)
 backup/
+
+# Builds versionados localmente (artefatos — nao versionar no git)
+builds/
