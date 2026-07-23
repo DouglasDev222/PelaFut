@@ -127,6 +127,7 @@ export function useLiveMatch(matchId: string) {
   const [error, setError] = useState<string | null>(null)
   const [roundRecoveryNeeded, setRoundRecoveryNeeded] = useState(false)
   const hasLoadedRef = useRef(false)
+  const syncInFlightRef = useRef(false)
 
   const load = useCallback(async () => {
     // Only the very first load blanks the screen — later refetches (after ending a
@@ -383,6 +384,100 @@ export function useLiveMatch(matchId: string) {
     load()
   }, [load])
 
+  /**
+   * Pulls the live state written by ANOTHER device. The clock is derived from
+   * persisted fields (started_at/paused_at/paused_seconds), but those were only
+   * read once on mount — a second phone with the screen already open never saw
+   * a pause/start/rotation done elsewhere until a manual refresh.
+   *
+   * Cheap by design: one single-row query per tick. Clock-only changes are
+   * patched in place (no flicker); anything structural — a different round,
+   * new goals/borrows, a shootout, the pelada finishing — falls back to a full
+   * load(). Skipped while this device is mid-decision (transition/tie dialogs),
+   * so a poll never yanks a dialog out from under the operator.
+   */
+  async function syncLiveState() {
+    if (loading || syncInFlightRef.current) return
+    if (match?.status === "finished") return
+    if (pendingTransition || pendingTieDecision || pendingTieOrder || pendingDirectWinner || pendingPenaltyFirstKicker) return
+    syncInFlightRef.current = true
+    try {
+      const { data: rows, error: syncError } = await supabase
+        .from("match_rounds")
+        .select("id, status, started_at, paused_at, paused_seconds")
+        .eq("match_id", matchId)
+        .order("sequence", { ascending: false })
+        .limit(1)
+      if (syncError) return
+      const latest = rows?.[0]
+      if (!latest) {
+        if (currentRound) await load()
+        return
+      }
+      if (!currentRound || latest.id !== currentRound.id || latest.status !== "in_progress") {
+        await load()
+        return
+      }
+      const [goalsRes, borrowsRes, kicksRes] = await Promise.all([
+        supabase.from("match_round_goals").select("id").eq("round_id", latest.id),
+        supabase.from("match_round_borrowed_players").select("id").eq("round_id", latest.id),
+        supabase.from("match_round_penalty_kicks").select("id").eq("round_id", latest.id),
+      ])
+      const goalCount = goalsRes.data?.length
+      const borrowCount = borrowsRes.data?.length
+      const kickCount = kicksRes.data?.length
+      if (
+        (typeof goalCount === "number" && goalCount !== currentRound.goals.length) ||
+        (typeof borrowCount === "number" && borrowCount !== currentRound.borrowedPlayers.length) ||
+        (!penaltyShootout && typeof kickCount === "number" && kickCount > 0)
+      ) {
+        await load()
+        return
+      }
+      const startedAt = latest.started_at as string
+      const pausedAt = (latest.paused_at as string | null) ?? null
+      const pausedSeconds = (latest.paused_seconds as number | null) ?? 0
+      if (
+        startedAt !== currentRound.startedAt ||
+        pausedAt !== currentRound.pausedAt ||
+        pausedSeconds !== currentRound.pausedSeconds
+      ) {
+        setCurrentRound((prev) =>
+          prev && prev.id === latest.id ? { ...prev, startedAt, pausedAt, pausedSeconds } : prev
+        )
+      }
+    } finally {
+      syncInFlightRef.current = false
+    }
+  }
+
+  // The poll's interval is set up once, but each tick must see fresh state —
+  // route it through a ref that always points at this render's syncLiveState.
+  const syncRef = useRef(syncLiveState)
+  syncRef.current = syncLiveState
+
+  useEffect(() => {
+    const tick = () => {
+      if (typeof document === "undefined" || document.visibilityState === "visible") {
+        syncRef.current()
+      }
+    }
+    // 10s keeps two phones agreeing within a breath, at one tiny query a tick.
+    const interval = setInterval(tick, 10_000)
+    // Coming back to the app (screen unlocked, tab refocused) resyncs at once —
+    // that's the moment a stale clock is most visible.
+    const onVisible = () => {
+      if (document.visibilityState === "visible") tick()
+    }
+    document.addEventListener("visibilitychange", onVisible)
+    window.addEventListener("focus", tick)
+    return () => {
+      clearInterval(interval)
+      document.removeEventListener("visibilitychange", onVisible)
+      window.removeEventListener("focus", tick)
+    }
+  }, [matchId])
+
   async function startLiveMatch() {
     if (!match || teams.length < 2) return { error: "É preciso de pelo menos 2 times" }
     setError(null)
@@ -397,6 +492,19 @@ export function useLiveMatch(matchId: string) {
         return { error: queueError.message }
       }
     }
+    // Same idempotency guard as finalizeRound: if a retry (after a network
+    // hiccup) re-runs this, don't create a second round 1 — adopt the existing.
+    const { data: existingRounds } = await supabase
+      .from("match_rounds")
+      .select("id")
+      .eq("match_id", matchId)
+      .limit(1)
+    if (existingRounds && existingRounds.length > 0) {
+      await supabase.from("matches").update({ status: "in_progress" }).eq("id", matchId)
+      await load()
+      return { error: null }
+    }
+
     const [first, second] = ordered
     const { error: insertError } = await supabase.from("match_rounds").insert({
       match_id: matchId,
@@ -673,6 +781,23 @@ export function useLiveMatch(matchId: string) {
     const finishedRoundId = currentRound.id
     const previousQueuePositions = teams.map((t) => ({ teamId: t.id, queuePosition: t.queuePosition }))
 
+    // Idempotency guard against a RETRIED finalize. A network hiccup can make
+    // the first attempt look failed after it already finished this game and
+    // created the next one; retrying "Encerrar" would then finish an
+    // already-finished game again and insert a SECOND next round at the same
+    // sequence — one of which stays stuck "em andamento" forever. If the next
+    // round already exists, the previous attempt went through: just resync.
+    const { data: alreadyNext, error: nextCheckError } = await supabase
+      .from("match_rounds")
+      .select("id")
+      .eq("match_id", matchId)
+      .eq("sequence", currentRound.sequence + 1)
+      .limit(1)
+    if (!nextCheckError && alreadyNext && alreadyNext.length > 0) {
+      await load()
+      return { error: null, result }
+    }
+
     const { error: finishError } = await supabase
       .from("match_rounds")
       .update({ status: "finished", result, decided_by: decidedBy, finished_at: new Date().toISOString() })
@@ -706,6 +831,19 @@ export function useLiveMatch(matchId: string) {
       return carryOverError?.message ?? null
     }
 
+    // Once the DB "one in-progress round per match" index is in place, a truly
+    // concurrent duplicate insert is rejected. If it was rejected because the
+    // next round already exists, adopt it instead of failing the finalize.
+    async function nextRoundAlreadyThere() {
+      const { data } = await supabase
+        .from("match_rounds")
+        .select("id")
+        .eq("match_id", matchId)
+        .eq("sequence", currentRound!.sequence + 1)
+        .limit(1)
+      return !!(data && data.length > 0)
+    }
+
     if (outcome.type === "replay") {
       const { data: newRound, error: insertError } = await supabase
         .from("match_rounds")
@@ -720,6 +858,10 @@ export function useLiveMatch(matchId: string) {
         .select("id")
         .single()
       if (insertError || !newRound) {
+        if (await nextRoundAlreadyThere()) {
+          await load()
+          return { error: null, result }
+        }
         setError(insertError?.message ?? "Erro ao criar a próxima rodada")
         return { error: insertError?.message ?? "Erro ao criar a próxima rodada" }
       }
@@ -761,6 +903,10 @@ export function useLiveMatch(matchId: string) {
       .select("id")
       .single()
     if (insertError || !newRound) {
+      if (await nextRoundAlreadyThere()) {
+        await load()
+        return { error: null, result }
+      }
       setError(insertError?.message ?? "Erro ao criar a próxima rodada")
       return { error: insertError?.message ?? "Erro ao criar a próxima rodada" }
     }
@@ -1222,6 +1368,7 @@ export function useLiveMatch(matchId: string) {
     resumeTimer,
     restartTimer,
     setClock,
+    syncLiveState,
     reload: load,
   }
 }
