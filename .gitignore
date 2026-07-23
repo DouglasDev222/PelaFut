@@ -12,3 +12,6 @@ supabase/.temp
 !.vscode/extensions.json
 *.tsbuildinfo
 coverage/
+
+# Backups locais do banco (dados reais — nunca versionar)
+backup/
