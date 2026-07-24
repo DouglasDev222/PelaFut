@@ -1,7 +1,9 @@
 import { useState, type ReactNode } from "react"
 import { useNavigate } from "react-router-dom"
-import { BarChart3, Search } from "lucide-react"
+import { BarChart3, Search, Trophy } from "lucide-react"
 import type { AccountStatRow } from "@/features/stats/useAccountStats"
+import { compareAccountPlayers, qualifyingMinPeladas } from "@/features/stats/aggregate"
+import { PlayerName, usePlayerProfilePopup } from "@/features/stats/PlayerProfilePopup"
 import { Legend, Th } from "@/features/stats/StatTable"
 import { matchesSearch } from "@/features/players/searchPlayer"
 import { Card, CardContent } from "@/components/ui/card"
@@ -57,11 +59,13 @@ function Leaderboard({
   metric,
   color,
   emptyLabel,
+  hrefForPlayer,
 }: {
   rows: AccountStatRow[]
   metric: SortKey
   color: string
   emptyLabel: string
+  hrefForPlayer?: (playerId: string) => string
 }) {
   const top = topFor(rows, metric)
   if (top.length === 0) {
@@ -77,7 +81,11 @@ function Leaderboard({
           </span>
           <div className="flex min-w-0 flex-1 flex-col gap-1">
             <div className="flex items-baseline justify-between gap-2">
-              <span className="truncate text-sm">{playerLabel(row)}</span>
+              <span className="truncate text-sm">
+                <PlayerName playerId={row.player.id} href={hrefForPlayer?.(row.player.id)}>
+                  {playerLabel(row)}
+                </PlayerName>
+              </span>
               <span className="shrink-0 text-sm font-semibold tabular-nums">{row[metric]}</span>
             </div>
             <div className="h-1.5 overflow-hidden rounded-full bg-muted">
@@ -110,13 +118,21 @@ export function GeneralStatsView({
   emptyState?: ReactNode
 }) {
   const navigate = useNavigate()
+  const popup = usePlayerProfilePopup()
+  const openPlayer = (playerId: string) =>
+    popup ? popup.open(playerId) : navigate(hrefForPlayer(playerId))
   const [search, setSearch] = useState("")
+  // Default view is the "best player" ranking (composite order + qualification).
+  // Tapping a column header switches to plain exploration of that metric; the
+  // "Jogador" header brings the ranking back.
+  const [rankingMode, setRankingMode] = useState(true)
   const [sort, setSort] = useState<{ key: SortKey; dir: "asc" | "desc" }>({
-    key: "goals",
+    key: "participations",
     dir: "desc",
   })
 
   function toggleSort(key: SortKey) {
+    setRankingMode(false)
     setSort((prev) =>
       prev.key === key ? { key, dir: prev.dir === "desc" ? "asc" : "desc" } : { key, dir: "desc" }
     )
@@ -136,10 +152,56 @@ export function GeneralStatsView({
   }
 
   const filtered = rows.filter((r) => matchesSearch(r.player, search))
-  const sorted = [...filtered].sort((a, b) => {
+
+  const byRank = (a: AccountStatRow, b: AccountStatRow) =>
+    compareAccountPlayers(a, b) || playerLabel(a).localeCompare(playerLabel(b))
+  // The bar is computed over the whole account, not the search result, so
+  // filtering never moves the qualification line.
+  const minPeladas = qualifyingMinPeladas(rows.map((r) => r.matchesPlayed))
+  const isQualified = (r: AccountStatRow) => minPeladas > 0 && r.matchesPlayed >= minPeladas
+  const qualified = filtered.filter(isQualified).sort(byRank)
+  const fewGames = filtered.filter((r) => !isQualified(r)).sort(byRank)
+  // Only split when it actually separates people (a brand-new group where
+  // nobody clears the bar just shows one plain ranking).
+  const splitRanking = qualified.length > 0 && fewGames.length > 0
+  const rankedAll = splitRanking ? qualified : [...filtered].sort(byRank)
+
+  const columnSorted = [...filtered].sort((a, b) => {
     const diff = sort.dir === "desc" ? b[sort.key] - a[sort.key] : a[sort.key] - b[sort.key]
     return diff || playerLabel(a).localeCompare(playerLabel(b))
   })
+
+  const colCount = COLUMNS.length + 1
+
+  function renderRow(row: AccountStatRow, medalIndex: number | null, muted: boolean) {
+    return (
+      <tr
+        key={row.player.id}
+        onClick={() => openPlayer(row.player.id)}
+        className={cn("cursor-pointer border-t hover:bg-muted/40", muted && "text-muted-foreground")}
+      >
+        <td className="sticky left-0 z-10 max-w-[9rem] truncate bg-card py-1.5 pr-2 text-left">
+          {medalIndex != null && medalIndex < 3 && <span className="mr-1">{MEDALS[medalIndex]}</span>}
+          {playerLabel(row)}
+        </td>
+        {COLUMNS.map((c) => (
+          <td
+            key={c.key}
+            className={cn(
+              "px-1 text-right tabular-nums",
+              !rankingMode && sort.key === c.key && "font-semibold text-foreground"
+            )}
+          >
+            {c.key === "pointsPct"
+              ? `${Math.round(row.pointsPct)}%`
+              : c.key === "goalsPerGame"
+                ? row.goalsPerGame.toFixed(1)
+                : row[c.key]}
+          </td>
+        ))}
+      </tr>
+    )
+  }
 
   return (
     <>
@@ -162,6 +224,7 @@ export function GeneralStatsView({
                 metric="goals"
                 color="var(--chart-series-1)"
                 emptyLabel="Nenhum gol marcado ainda."
+                hrefForPlayer={hrefForPlayer}
               />
             </TabsPanel>
             <TabsPanel value="assistencias">
@@ -170,6 +233,7 @@ export function GeneralStatsView({
                 metric="assists"
                 color="var(--chart-series-2)"
                 emptyLabel="Nenhuma assistência registrada ainda."
+                hrefForPlayer={hrefForPlayer}
               />
             </TabsPanel>
             <TabsPanel value="vitorias">
@@ -178,6 +242,7 @@ export function GeneralStatsView({
                 metric="wins"
                 color="var(--chart-series-1)"
                 emptyLabel="Nenhuma vitória ainda."
+                hrefForPlayer={hrefForPlayer}
               />
             </TabsPanel>
           </Tabs>
@@ -194,7 +259,7 @@ export function GeneralStatsView({
         />
       </div>
 
-      {sorted.length === 0 ? (
+      {filtered.length === 0 ? (
         <EmptyState
           icon={Search}
           title="Nenhum peladeiro encontrado"
@@ -213,46 +278,51 @@ export function GeneralStatsView({
                       scope="col"
                       className="sticky left-0 z-10 bg-card py-1 pr-2 text-left font-medium"
                     >
-                      Jogador
+                      {/* Doubles as the "back to ranking" control. */}
+                      <button
+                        type="button"
+                        onClick={() => setRankingMode(true)}
+                        className={cn(
+                          "flex items-center gap-1",
+                          rankingMode ? "text-foreground" : "hover:text-foreground"
+                        )}
+                      >
+                        {rankingMode && <Trophy className="size-3.5 text-amber-500" />}
+                        Jogador
+                      </button>
                     </th>
                     {COLUMNS.map((c) => (
                       <Th
                         key={c.key}
                         abbr={c.abbr}
                         label={c.label}
-                        active={sort.key === c.key}
+                        active={!rankingMode && sort.key === c.key}
                         onClick={() => toggleSort(c.key)}
                       />
                     ))}
                   </tr>
                 </thead>
                 <tbody>
-                  {sorted.map((row) => (
-                    <tr
-                      key={row.player.id}
-                      onClick={() => navigate(hrefForPlayer(row.player.id))}
-                      className="cursor-pointer border-t hover:bg-muted/40"
-                    >
-                      <td className="sticky left-0 z-10 max-w-[9rem] truncate bg-card py-1.5 pr-2 text-left">
-                        {playerLabel(row)}
-                      </td>
-                      {COLUMNS.map((c) => (
-                        <td
-                          key={c.key}
-                          className={cn(
-                            "px-1 text-right tabular-nums",
-                            sort.key === c.key && "font-semibold text-foreground"
-                          )}
-                        >
-                          {c.key === "pointsPct"
-                            ? `${Math.round(row.pointsPct)}%`
-                            : c.key === "goalsPerGame"
-                              ? row.goalsPerGame.toFixed(1)
-                              : row[c.key]}
-                        </td>
-                      ))}
-                    </tr>
-                  ))}
+                  {rankingMode ? (
+                    <>
+                      {rankedAll.map((row, i) => renderRow(row, i, false))}
+                      {splitRanking && (
+                        <>
+                          <tr className="border-t">
+                            <td
+                              colSpan={colCount}
+                              className="bg-muted/30 py-1.5 text-left text-xs font-medium text-muted-foreground"
+                            >
+                              Poucos jogos · menos de {minPeladas} pelada{minPeladas === 1 ? "" : "s"}
+                            </td>
+                          </tr>
+                          {fewGames.map((row) => renderRow(row, null, true))}
+                        </>
+                      )}
+                    </>
+                  ) : (
+                    columnSorted.map((row) => renderRow(row, null, false))
+                  )}
                 </tbody>
               </table>
             </div>
@@ -271,7 +341,12 @@ export function GeneralStatsView({
               ]}
             />
             <p className="mt-2 text-[11px] text-muted-foreground">
-              Toque num cabeçalho para ordenar · toque num peladeiro para ver o perfil.
+              {rankingMode
+                ? `Ranking por participações (G+A), depois aproveitamento e gols${
+                    splitRanking ? ` · precisa de ${minPeladas}+ peladas pra entrar no topo` : ""
+                  }. Toque numa coluna pra ordenar por ela.`
+                : "Toque em “Jogador” pra voltar ao ranking · toque numa coluna pra reordenar."}{" "}
+              · toque num peladeiro pra ver o perfil.
             </p>
           </CardContent>
         </Card>

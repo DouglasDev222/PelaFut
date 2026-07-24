@@ -1,8 +1,8 @@
 import { useState } from "react"
-import { Link } from "react-router-dom"
 import { ChevronDown } from "lucide-react"
 import type { Player } from "@pelafut/shared"
 import {
+  comparePeladaPlayers,
   computeTeamPlayerStats,
   computeTeamStandings,
   roundDurationSeconds,
@@ -12,6 +12,7 @@ import {
   type TeamStandingLine,
 } from "@/features/stats/aggregate"
 import type { StatsRound, StatsTeam } from "@/features/stats/fetchRaw"
+import { PlayerName } from "@/features/stats/PlayerProfilePopup"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Dialog, DialogPopup, DialogTitle } from "@/components/ui/dialog"
 import { Tabs, TabsList, TabsPanel, TabsTab } from "@/components/ui/tabs"
@@ -101,13 +102,9 @@ function RankingList({
           <div className="flex min-w-0 flex-1 flex-col gap-1">
             <div className="flex items-baseline justify-between gap-2">
               <span className="truncate text-sm">
-                {hrefForPlayer ? (
-                  <Link to={hrefForPlayer(row.playerId)} className="underline">
-                    {playerName(playersById, row.playerId)}
-                  </Link>
-                ) : (
-                  playerName(playersById, row.playerId)
-                )}
+                <PlayerName playerId={row.playerId} href={hrefForPlayer?.(row.playerId)}>
+                  {playerName(playersById, row.playerId)}
+                </PlayerName>
               </span>
               <span className="shrink-0 text-sm font-semibold tabular-nums">{row.value}</span>
             </div>
@@ -253,21 +250,16 @@ function RoundHistoryCard({
               <div key={team?.id ?? "?"} className="flex flex-col gap-0.5">
                 <TeamLabel team={team} />
                 {team &&
-                  rosterFor(team.id).map((p) =>
-                    hrefForPlayer ? (
-                      <Link
-                        key={p.id}
-                        to={hrefForPlayer(p.id)}
-                        className="text-muted-foreground uppercase underline"
-                      >
-                        {p.name}
-                      </Link>
-                    ) : (
-                      <p key={p.id} className="text-muted-foreground uppercase">
-                        {p.name}
-                      </p>
-                    )
-                  )}
+                  rosterFor(team.id).map((p) => (
+                    <PlayerName
+                      key={p.id}
+                      playerId={p.id}
+                      href={hrefForPlayer?.(p.id)}
+                      className="text-muted-foreground uppercase"
+                    >
+                      {p.name}
+                    </PlayerName>
+                  ))}
               </div>
             ))}
           </div>
@@ -357,15 +349,9 @@ function TeamBreakdownCard({
         <div className="flex flex-col gap-0.5 border-t pt-2 text-sm">
           {players.map((p) => (
             <div key={p.playerId} className="flex items-center justify-between gap-2">
-              <span className="truncate">
-                {hrefForPlayer ? (
-                  <Link to={hrefForPlayer(p.playerId)} className="underline">
-                    {playerName(playersById, p.playerId)}
-                  </Link>
-                ) : (
-                  playerName(playersById, p.playerId)
-                )}
-              </span>
+              <PlayerName playerId={p.playerId} href={hrefForPlayer?.(p.playerId)} className="truncate">
+                {playerName(playersById, p.playerId)}
+              </PlayerName>
               <span className="shrink-0 text-xs text-muted-foreground tabular-nums">
                 {p.goals === 0 && p.assists === 0 ? (
                   "—"
@@ -685,17 +671,19 @@ export function MatchStatsView({
                   </thead>
                   <tbody>
                     {[...playerStats]
-                      .sort((a, b) => b.goals - a.goals || b.assists - a.assists)
+                      .sort(
+                        (a, b) =>
+                          comparePeladaPlayers(a, b) ||
+                          playerName(playersById, a.playerId).localeCompare(
+                            playerName(playersById, b.playerId)
+                          )
+                      )
                       .map((s) => (
                         <tr key={s.playerId} className="border-t">
                           <td className="py-1.5 pr-2">
-                            {hrefForPlayer ? (
-                              <Link to={hrefForPlayer(s.playerId)} className="underline">
-                                {playerName(playersById, s.playerId)}
-                              </Link>
-                            ) : (
-                              playerName(playersById, s.playerId)
-                            )}
+                            <PlayerName playerId={s.playerId} href={hrefForPlayer?.(s.playerId)}>
+                              {playerName(playersById, s.playerId)}
+                            </PlayerName>
                           </td>
                           <td className="px-1 text-right tabular-nums">{s.roundsPlayed}</td>
                           <td className="px-1 text-right font-medium tabular-nums">{s.goals}</td>

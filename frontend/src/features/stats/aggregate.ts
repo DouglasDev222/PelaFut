@@ -164,6 +164,45 @@ export function computeAccountPlayerStats(
 }
 
 /**
+ * "Best player" order within ONE pelada: most participações (gols + assist),
+ * then most vitórias, then most gols. Everyone plays a similar number of games
+ * in a single pelada, so raw wins are fair here. Callers add a name tiebreak.
+ */
+export function comparePeladaPlayers(
+  a: { goals: number; assists: number; wins: number },
+  b: { goals: number; assists: number; wins: number }
+): number {
+  return b.goals + b.assists - (a.goals + a.assists) || b.wins - a.wins || b.goals - a.goals
+}
+
+/**
+ * "Best player" order ACROSS peladas: most participações, then best
+ * aproveitamento (win %), then most gols. Uses the rate (not raw wins) because
+ * games played varies a lot over a career. Callers add a name tiebreak.
+ */
+export function compareAccountPlayers(
+  a: { participations: number; pointsPct: number; goals: number },
+  b: { participations: number; pointsPct: number; goals: number }
+): number {
+  return b.participations - a.participations || b.pointsPct - a.pointsPct || b.goals - a.goals
+}
+
+/**
+ * Minimum peladas a player must have to make the "official" account-wide
+ * ranking — the median of how many peladas people played, floored at 2. This
+ * keeps a one-night wonder (great in a single pelada) out of the podium without
+ * a magic constant: the bar rises with how active the group is. Returns 0 when
+ * there's no data to compute it from.
+ */
+export function qualifyingMinPeladas(matchesPlayed: number[]): number {
+  const played = matchesPlayed.filter((n) => n > 0).sort((x, y) => x - y)
+  if (played.length === 0) return 0
+  const mid = Math.floor(played.length / 2)
+  const median = played.length % 2 === 0 ? (played[mid - 1]! + played[mid]!) / 2 : played[mid]!
+  return Math.max(2, Math.ceil(median))
+}
+
+/**
  * Standings for the teams of one pelada, from its finished rounds: games,
  * W/D/L, goals for/against and points (3 for a win, 1 for a draw).
  *
