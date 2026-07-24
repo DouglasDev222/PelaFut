@@ -13,6 +13,7 @@ import {
 } from "@/features/stats/aggregate"
 import type { StatsRound, StatsTeam } from "@/features/stats/fetchRaw"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { Dialog, DialogPopup, DialogTitle } from "@/components/ui/dialog"
 import { Tabs, TabsList, TabsPanel, TabsTab } from "@/components/ui/tabs"
 import { Legend, Th } from "@/features/stats/StatTable"
 import { cn } from "@/lib/utils"
@@ -78,12 +79,14 @@ function RankingList({
   playersById,
   color,
   emptyLabel,
+  hrefForPlayer,
 }: {
   rows: { playerId: string; value: number }[]
   max: number
   playersById: Map<string, Player>
   color: string
   emptyLabel: string
+  hrefForPlayer?: (playerId: string) => string
 }) {
   if (rows.length === 0) {
     return <p className="py-2 text-sm text-muted-foreground">{emptyLabel}</p>
@@ -97,7 +100,15 @@ function RankingList({
           </span>
           <div className="flex min-w-0 flex-1 flex-col gap-1">
             <div className="flex items-baseline justify-between gap-2">
-              <span className="truncate text-sm">{playerName(playersById, row.playerId)}</span>
+              <span className="truncate text-sm">
+                {hrefForPlayer ? (
+                  <Link to={hrefForPlayer(row.playerId)} className="underline">
+                    {playerName(playersById, row.playerId)}
+                  </Link>
+                ) : (
+                  playerName(playersById, row.playerId)
+                )}
+              </span>
               <span className="shrink-0 text-sm font-semibold tabular-nums">{row.value}</span>
             </div>
             <div className="h-1.5 overflow-hidden rounded-full bg-muted">
@@ -291,7 +302,6 @@ function TeamBreakdownCard({
   playersById: Map<string, Player>
   hrefForPlayer?: (playerId: string) => string
 }) {
-  const scored = players.filter((p) => p.goals > 0 || p.assists > 0)
   function names(ids: string[]) {
     return ids.map((id) => playerName(playersById, id)).join(", ")
   }
@@ -341,9 +351,11 @@ function TeamBreakdownCard({
         </div>
       </div>
 
-      {(scored.length > 0 || noScorerGoals > 0) && (
+      {(players.length > 0 || noScorerGoals > 0) && (
+        // Every player who played for the team — scorers first, then those who
+        // didn't score (shown with a dash), so it doubles as the team roster.
         <div className="flex flex-col gap-0.5 border-t pt-2 text-sm">
-          {scored.map((p) => (
+          {players.map((p) => (
             <div key={p.playerId} className="flex items-center justify-between gap-2">
               <span className="truncate">
                 {hrefForPlayer ? (
@@ -355,9 +367,15 @@ function TeamBreakdownCard({
                 )}
               </span>
               <span className="shrink-0 text-xs text-muted-foreground tabular-nums">
-                {p.goals > 0 && `⚽ ${p.goals}`}
-                {p.goals > 0 && p.assists > 0 && " · "}
-                {p.assists > 0 && `🎯 ${p.assists}`}
+                {p.goals === 0 && p.assists === 0 ? (
+                  "—"
+                ) : (
+                  <>
+                    {p.goals > 0 && `⚽ ${p.goals}`}
+                    {p.goals > 0 && p.assists > 0 && " · "}
+                    {p.assists > 0 && `🎯 ${p.assists}`}
+                  </>
+                )}
               </span>
             </div>
           ))}
@@ -405,6 +423,8 @@ export function MatchStatsView({
   hrefForPlayer?: (playerId: string) => string
 }) {
   const [standingsSort, setStandingsSort] = useState<StandingsSort>("points")
+  // Which team's formation popup is open (from tapping a ranking row).
+  const [openTeamId, setOpenTeamId] = useState<string | null>(null)
 
   const finishedRounds = rounds.filter((r) => r.status === "finished")
   const totalGoals = finishedRounds.reduce((sum, r) => sum + r.homeScore + r.awayScore, 0)
@@ -417,8 +437,8 @@ export function MatchStatsView({
   const maxAssists = topAssisters[0]?.assists ?? 0
   const garcons = topAssisters.filter((s) => s.assists === maxAssists)
 
-  const scorerRows = topScorers.slice(0, 8).map((s) => ({ playerId: s.playerId, value: s.goals }))
-  const assistRows = topAssisters.slice(0, 8).map((s) => ({ playerId: s.playerId, value: s.assists }))
+  const scorerRows = topScorers.slice(0, 10).map((s) => ({ playerId: s.playerId, value: s.goals }))
+  const assistRows = topAssisters.slice(0, 10).map((s) => ({ playerId: s.playerId, value: s.assists }))
 
   // computeTeamStandings already returns the league-table order (points first),
   // so only the "wins" view needs re-sorting.
@@ -535,6 +555,9 @@ export function MatchStatsView({
               <SortToggle value={standingsSort} onChange={setStandingsSort} />
             </CardHeader>
             <CardContent>
+              <p className="mb-2 text-xs text-muted-foreground">
+                Toque num time para ver a formação e os gols.
+              </p>
               <div className="overflow-x-auto">
                 <table className="w-full text-sm">
                   <thead>
@@ -555,7 +578,14 @@ export function MatchStatsView({
                   </thead>
                   <tbody>
                     {sortedStandings.map((s, i) => (
-                      <tr key={s.teamId} className={cn("border-t", i === 0 && "bg-muted/40")}>
+                      <tr
+                        key={s.teamId}
+                        onClick={() => setOpenTeamId(s.teamId)}
+                        className={cn(
+                          "cursor-pointer border-t transition-colors hover:bg-muted/60",
+                          i === 0 && "bg-muted/40"
+                        )}
+                      >
                         <td className="py-1.5 text-left tabular-nums">
                           {i === 0 ? "🏆" : `${i + 1}º`}
                         </td>
@@ -616,6 +646,7 @@ export function MatchStatsView({
                     playersById={playersById}
                     color="var(--chart-series-1)"
                     emptyLabel="Nenhum gol marcado ainda."
+                    hrefForPlayer={hrefForPlayer}
                   />
                 </TabsPanel>
                 <TabsPanel value="assistencias">
@@ -625,6 +656,7 @@ export function MatchStatsView({
                     playersById={playersById}
                     color="var(--chart-series-2)"
                     emptyLabel="Nenhuma assistência registrada ainda."
+                    hrefForPlayer={hrefForPlayer}
                   />
                 </TabsPanel>
               </Tabs>
@@ -733,6 +765,31 @@ export function MatchStatsView({
           </div>
         </>
       )}
+
+      {openTeamId &&
+        (() => {
+          const ts = teamStatsById.get(openTeamId)
+          const team = teamsById.get(openTeamId)
+          return (
+            <Dialog open onOpenChange={(o) => !o && setOpenTeamId(null)}>
+              <DialogPopup className="flex max-h-[85svh] flex-col gap-3 overflow-y-auto">
+                <DialogTitle>Formação — Time {team?.number ?? "?"}</DialogTitle>
+                <TeamBreakdownCard
+                  team={team}
+                  players={ts?.players ?? []}
+                  noScorerGoals={ts?.noScorerGoals ?? 0}
+                  standing={standingsById.get(openTeamId)}
+                  topScorerIds={ts?.topScorerIds ?? []}
+                  topScorerGoals={ts?.topScorerGoals ?? 0}
+                  topAssisterIds={ts?.topAssisterIds ?? []}
+                  topAssisterAssists={ts?.topAssisterAssists ?? 0}
+                  playersById={playersById}
+                  hrefForPlayer={hrefForPlayer}
+                />
+              </DialogPopup>
+            </Dialog>
+          )
+        })()}
     </>
   )
 }
