@@ -3,6 +3,7 @@ import { usePublicStats } from "@/features/public/usePublicStats"
 import { PublicNotFound, PublicShell } from "@/features/public/PublicShell"
 import { computePlayerStats } from "@/features/stats/aggregate"
 import { MatchStatsView } from "@/features/stats/views/MatchStatsView"
+import { PublicPlayerProfileProvider } from "@/features/stats/PlayerProfilePopup"
 
 export function PublicMatchPage() {
   const { codigo, jogoId } = useParams<{ codigo: string; jogoId: string }>()
@@ -20,18 +21,20 @@ export function PublicMatchPage() {
   return (
     <PublicShell codigo={codigo!} titulo={data.titulo}>
       {error && <p className="text-sm text-destructive">{error}</p>}
-      <MatchStatsView
-        matchName={pelada.nome}
-        teams={data.teams}
-        rounds={data.statsRounds}
-        participants={data.participants}
-        goals={data.goals}
-        playerStats={playerStats}
-        playersById={data.playersById}
-        regulationSeconds={pelada.durationMinutes ? pelada.durationMinutes * 60 : undefined}
-        tieBothLeaveAllowed={pelada.tieBothLeaveAllowed}
-        hrefForPlayer={(id) => `/pelada/${codigo}/jogador/${id}`}
-      />
+      <PublicPlayerProfileProvider data={data} codigo={codigo!}>
+        <MatchStatsView
+          matchName={pelada.nome}
+          teams={data.teams}
+          rounds={data.statsRounds}
+          participants={data.participants}
+          goals={data.goals}
+          playerStats={playerStats}
+          playersById={data.playersById}
+          regulationSeconds={pelada.durationMinutes ? pelada.durationMinutes * 60 : undefined}
+          tieBothLeaveAllowed={pelada.tieBothLeaveAllowed}
+          hrefForPlayer={(id) => `/pelada/${codigo}/jogador/${id}`}
+        />
+      </PublicPlayerProfileProvider>
     </PublicShell>
   )
 }

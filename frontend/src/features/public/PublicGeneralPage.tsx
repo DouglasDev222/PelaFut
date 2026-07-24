@@ -2,6 +2,7 @@ import { useParams } from "react-router-dom"
 import { usePublicStats } from "@/features/public/usePublicStats"
 import { PublicNotFound, PublicShell } from "@/features/public/PublicShell"
 import { GeneralStatsView } from "@/features/stats/views/GeneralStatsView"
+import { PublicPlayerProfileProvider } from "@/features/stats/PlayerProfilePopup"
 
 export function PublicGeneralPage() {
   const { codigo } = useParams<{ codigo: string }>()
@@ -13,11 +14,13 @@ export function PublicGeneralPage() {
   return (
     <PublicShell codigo={codigo!} titulo={data.titulo}>
       {error && <p className="text-sm text-destructive">{error}</p>}
-      <GeneralStatsView
-        rows={rows}
-        matchesCount={matchesCount}
-        hrefForPlayer={(id) => `/pelada/${codigo}/jogador/${id}`}
-      />
+      <PublicPlayerProfileProvider data={data} codigo={codigo!}>
+        <GeneralStatsView
+          rows={rows}
+          matchesCount={matchesCount}
+          hrefForPlayer={(id) => `/pelada/${codigo}/jogador/${id}`}
+        />
+      </PublicPlayerProfileProvider>
     </PublicShell>
   )
 }

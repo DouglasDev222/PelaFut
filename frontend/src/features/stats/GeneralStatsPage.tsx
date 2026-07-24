@@ -1,6 +1,7 @@
 import { Users } from "lucide-react"
 import { useAccountStats } from "@/features/stats/useAccountStats"
 import { GeneralStatsView } from "@/features/stats/views/GeneralStatsView"
+import { PrivatePlayerProfileProvider } from "@/features/stats/PlayerProfilePopup"
 import { EmptyState } from "@/components/ui/empty-state"
 
 export function GeneralStatsPage() {
@@ -19,11 +20,13 @@ export function GeneralStatsPage() {
           description="Cadastre peladeiros e jogue algumas peladas pra ver as estatísticas aqui."
         />
       ) : (
-        <GeneralStatsView
-          rows={rows}
-          matchesCount={matchesCount}
-          hrefForPlayer={(id) => `/players/${id}/stats`}
-        />
+        <PrivatePlayerProfileProvider>
+          <GeneralStatsView
+            rows={rows}
+            matchesCount={matchesCount}
+            hrefForPlayer={(id) => `/players/${id}/stats`}
+          />
+        </PrivatePlayerProfileProvider>
       )}
     </div>
   )

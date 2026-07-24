@@ -1,6 +1,7 @@
 import { useParams } from "react-router-dom"
 import { useMatchStats } from "@/features/stats/useMatchStats"
 import { MatchStatsView } from "@/features/stats/views/MatchStatsView"
+import { PrivatePlayerProfileProvider } from "@/features/stats/PlayerProfilePopup"
 
 export function MatchStatsPage() {
   const { id } = useParams<{ id: string }>()
@@ -16,18 +17,20 @@ export function MatchStatsPage() {
   return (
     <div className="flex w-full flex-col gap-4">
       {error && <p className="text-sm text-destructive">{error}</p>}
-      <MatchStatsView
-        matchName={match.name}
-        teams={teams}
-        rounds={rounds}
-        participants={participants}
-        goals={goals}
-        playerStats={playerStats}
-        playersById={playersById}
-        regulationSeconds={match.match_duration_minutes ? match.match_duration_minutes * 60 : undefined}
-        tieBothLeaveAllowed={match.tie_both_leave_allowed}
-        hrefForPlayer={(playerId) => `/players/${playerId}/stats`}
-      />
+      <PrivatePlayerProfileProvider>
+        <MatchStatsView
+          matchName={match.name}
+          teams={teams}
+          rounds={rounds}
+          participants={participants}
+          goals={goals}
+          playerStats={playerStats}
+          playersById={playersById}
+          regulationSeconds={match.match_duration_minutes ? match.match_duration_minutes * 60 : undefined}
+          tieBothLeaveAllowed={match.tie_both_leave_allowed}
+          hrefForPlayer={(playerId) => `/players/${playerId}/stats`}
+        />
+      </PrivatePlayerProfileProvider>
     </div>
   )
 }
